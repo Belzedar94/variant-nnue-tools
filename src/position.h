@@ -76,6 +76,11 @@ struct StateInfo {
   Piece      promotionPawn;
   Bitboard   nonSlidingRiders;
   Bitboard   flippedPieces;
+  Bitboard   colorChangeSquares;
+  Bitboard   colorChangeWasPromoted;
+  Piece      colorChangeOriginal[SQUARE_NB];
+  Piece      colorChangeUnpromoted[SQUARE_NB];
+  Bitboard   dormantBefore;
   Bitboard   pseudoRoyalCandidates;
   Bitboard   pseudoRoyals;
   OptBool    legalCapture;
@@ -145,6 +150,7 @@ public:
   bool blast_on_capture() const;
   PieceSet blast_immune_types() const;
   PieceSet mutually_immune_types() const;
+  PieceSet iron_piece_types() const;
   EndgameEval endgame_eval() const;
   Bitboard double_step_region(Color c) const;
   Bitboard triple_step_region(Color c) const;
@@ -169,6 +175,8 @@ public:
   bool fast_attacks2() const;
   bool checking_permitted() const;
   bool drop_checks() const;
+  bool self_capture() const;
+  bool capture_disabled() const;
   bool must_capture() const;
   bool has_capture() const;
   bool must_drop() const;
@@ -241,6 +249,7 @@ public:
   Bitboard pieces(PieceType pt = ALL_PIECES) const;
   Bitboard pieces(PieceType pt1, PieceType pt2) const;
   Bitboard pieces(Color c) const;
+  Bitboard dormant_pieces() const;
   Bitboard pieces(Color c, PieceType pt) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2) const;
   Bitboard pieces(Color c, PieceType pt1, PieceType pt2, PieceType pt3) const;
@@ -408,6 +417,7 @@ private:
   int pieceCountInHand[COLOR_NB][PIECE_TYPE_NB];
   int virtualPieces;
   Bitboard promotedPieces;
+  Bitboard dormantPieces;
   void add_to_hand(Piece pc);
   void remove_from_hand(Piece pc);
   void drop_piece(Piece pc_hand, Piece pc_drop, Square s);
@@ -543,6 +553,11 @@ inline PieceSet Position::mutually_immune_types() const {
   return var->mutuallyImmuneTypes;
 }
 
+inline PieceSet Position::iron_piece_types() const {
+  assert(var != nullptr);
+  return var->ironPieceTypes;
+}
+
 inline EndgameEval Position::endgame_eval() const {
   assert(var != nullptr);
   return !count_in_hand(ALL_PIECES) && (var->endgameEval != EG_EVAL_CHESS || count<KING>() == 2) ? var->endgameEval : NO_EG_EVAL;
@@ -660,6 +675,16 @@ inline bool Position::fast_attacks2() const {
 inline bool Position::drop_checks() const {
   assert(var != nullptr);
   return var->dropChecks;
+}
+
+inline bool Position::self_capture() const {
+  assert(var != nullptr);
+  return var->selfCapture;
+}
+
+inline bool Position::capture_disabled() const {
+  assert(var != nullptr);
+  return var->captureDisabled;
 }
 
 inline bool Position::must_capture() const {
@@ -1225,6 +1250,10 @@ inline Bitboard Position::pieces(Color c) const {
   return byColorBB[c];
 }
 
+inline Bitboard Position::dormant_pieces() const {
+  return dormantPieces;
+}
+
 inline Bitboard Position::pieces(Color c, PieceType pt) const {
   return pieces(c) & pieces(pt);
 }
@@ -1305,6 +1334,8 @@ inline Square Position::castling_rook_square(CastlingRights cr) const {
 }
 
 inline Bitboard Position::attacks_from(Color c, PieceType pt, Square s) const {
+  if (dormantPieces & square_bb(s))
+      return Bitboard(0);
   if (var->fastAttacks || var->fastAttacks2)
       return attacks_bb(c, pt, s, byTypeBB[ALL_PIECES]) & board_bb();
 
@@ -1535,6 +1566,7 @@ inline void Position::put_piece(Piece pc, Square s, bool isPromoted, Piece unpro
   board[s] = pc;
   byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
   byColorBB[color_of(pc)] |= s;
+  dormantPieces &= ~square_bb(s);
   pieceCount[pc]++;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
   psq += PSQT::psq[pc][s];
@@ -1549,6 +1581,7 @@ inline void Position::remove_piece(Square s) {
   byTypeBB[ALL_PIECES] ^= s;
   byTypeBB[type_of(pc)] ^= s;
   byColorBB[color_of(pc)] ^= s;
+  dormantPieces &= ~square_bb(s);
   board[s] = NO_PIECE;
   pieceCount[pc]--;
   pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;
