@@ -80,6 +80,28 @@ namespace {
         v->doubleStepRegion[BLACK] = AllSquares;
         return v;
     }
+    Variant* spell_chess_variant() {
+        Variant* v = chess_variant()->init();
+        v->variantTemplate = "spell-chess";
+        v->potions = true;
+        v->potionPiece[Variant::POTION_FREEZE] = CUSTOM_PIECE_1;
+        v->potionPiece[Variant::POTION_JUMP] = CUSTOM_PIECE_2;
+        v->potionCooldown[Variant::POTION_FREEZE] = 3;
+        v->potionCooldown[Variant::POTION_JUMP] = 3;
+        v->potionDropOnOccupied = true;
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
+        v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_1)] = 'F';
+        v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_1)] = 'f';
+        v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_2)] = 'J';
+        v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_2)] = 'j';
+        v->extinctionValue = -VALUE_MATE;
+        v->extinctionPieceTypes = piece_set(COMMONER);
+        v->extinctionPieceCount = 0;
+        v->startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[JJFFFFFjjfffff] w KQkq - 0 1";
+        return v;
+    }
     // Berolina Chess
     // https://www.chessvariants.com/dpieces.dir/berlin.html
     Variant* berolina_variant() {
@@ -596,7 +618,7 @@ namespace {
         v->flagRegion[WHITE] = Rank8BB;
         return v;
     }
-
+	
     // Three-check chess
     // Check the king three times to win
     // https://lichess.org/variant/threeCheck
@@ -614,6 +636,7 @@ namespace {
         v->nnueAlias = "3check";
         return v;
     }
+
     // Crazyhouse
     // Chess with piece drops
     // https://en.wikipedia.org/wiki/Crazyhouse
@@ -625,6 +648,7 @@ namespace {
         v->capturesToHand = true;
         return v;
     }
+	
     // Loop chess
     // Variant of crazyhouse where promoted pawns are not demoted when captured
     // https://en.wikipedia.org/wiki/Crazyhouse#Variations
@@ -634,6 +658,23 @@ namespace {
         v->nnueAlias = "crazyhouse";
         return v;
     }
+	
+	//Capture-Anything
+	// https://www.chess.com/terms/capture-anything-chess
+   Variant* captureanything_variant() {
+	   Variant* v = chess_variant_base()->init();
+	   v->selfCapture = true;
+	     return v;
+    }
+
+    //RecycleChess
+    //	# https://brainking.com/en/GameRules?tp=9
+    Variant* recycle_variant() {
+	 Variant* v = crazyhouse_variant()->init();
+       v->selfCapture = true; 
+  return v;
+    }	   
+
     // Chessgi
     // Variant of loop chess where pawns can be dropped to the first rank
     // https://en.wikipedia.org/wiki/Crazyhouse#Variations
@@ -1833,6 +1874,7 @@ void VariantMap::init() {
     add("nocastle", nocastle_variant());
     add("armageddon", armageddon_variant());
     add("torpedo", torpedo_variant());
+    add("spell-chess", spell_chess_variant());
     add("berolina", berolina_variant());
     add("pawnsideways", pawnsideways_variant());
     add("pawnback", pawnback_variant());
@@ -1872,6 +1914,8 @@ void VariantMap::init() {
     add("isolation7x7", isolation7x7_variant());
     add("snailtrail", snailtrail_variant());
     add("fox-and-hounds", fox_and_hounds_variant());
+	add("captureanything", captureanything_variant());
+	add("recycle", recycle_variant());
 #ifdef ALLVARS
     add("duck", duck_variant());
 #endif
