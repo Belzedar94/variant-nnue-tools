@@ -723,7 +723,7 @@ void Position::set_state(StateInfo* si) const {
           for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
               si->materialKey ^= Zobrist::psq[pc][cnt];
 
-          if (piece_drops() || seirawan_gating())
+          if (piece_drops() || seirawan_gating() || potions_enabled())
               si->key ^= Zobrist::inHand[pc][pieceCountInHand[c][pt]];
       }
 
