@@ -14,6 +14,12 @@ else:
 
 args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
 
+# Mirror the default Makefile NNUE data size so headers that rely on the
+# DATA_SIZE macro (for packed SFEN support) compile correctly when building the
+# Python extension outside of the engine Makefile.
+data_size = os.environ.get("PYFFISH_DATA_SIZE", "512")
+args.append(f"-DDATA_SIZE={data_size}")
+
 if "64bit" in platform.architecture():
     args.append("-DIS_64BIT")
 
@@ -39,6 +45,7 @@ pyffish_module = Extension(
     "pyffish",
     sources=sources,
     depends=headers,
+    include_dirs=["src"],
     extra_compile_args=args)
 
 setup(name="pyffish", version="0.0.88",
