@@ -7,8 +7,9 @@ on:
         - codex/implement-chess-heuristics-for-move-prioritization
     pull_request:
       branches:
-        - master
-        - codex/implement-chess-heuristics-for-move-prioritization
+
+        - "**"
+
 
 jobs:
   build_wheels:
