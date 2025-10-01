@@ -6297,26 +6297,28 @@ namespace binpack
                     promotionIndex = static_cast<int>(move.promotedPiece.type()) - static_cast<int>(chess::PieceType::Knight);
                 }
 
-                sfm.m_raw |= static_cast<std::uint16_t>(moveFlag);
-                sfm.m_raw <<= 2;
-                sfm.m_raw |= static_cast<std::uint16_t>(promotionIndex);
-                sfm.m_raw <<= 6;
-                sfm.m_raw |= static_cast<int>(move.from);
-                sfm.m_raw <<= 6;
-                sfm.m_raw |= static_cast<int>(move.to);
+                std::uint32_t raw = 0;
+                raw |= static_cast<std::uint32_t>(moveFlag);
+                raw <<= 2;
+                raw |= static_cast<std::uint32_t>(promotionIndex);
+                raw <<= 6;
+                raw |= static_cast<std::uint32_t>(static_cast<int>(move.from));
+                raw <<= 6;
+                raw |= static_cast<std::uint32_t>(static_cast<int>(move.to));
 
+                sfm.m_raw = raw;
                 return sfm;
             }
 
             [[nodiscard]] chess::Move toMove() const
             {
-                const chess::Square to = static_cast<chess::Square>((m_raw & (0b111111 << 0) >> 0));
-                const chess::Square from = static_cast<chess::Square>((m_raw & (0b111111 << 6)) >> 6);
+                const chess::Square to = static_cast<chess::Square>((m_raw & (0b111111u << 0)) >> 0);
+                const chess::Square from = static_cast<chess::Square>((m_raw & (0b111111u << 6)) >> 6);
 
-                const unsigned promotionIndex = (m_raw & (0b11 << 12)) >> 12;
+                const unsigned promotionIndex = (m_raw & (0b11u << 12)) >> 12;
                 const chess::PieceType promotionType = static_cast<chess::PieceType>(static_cast<int>(chess::PieceType::Knight) + promotionIndex);
 
-                const unsigned moveFlag = (m_raw & (0b11 << 14)) >> 14;
+                const unsigned moveFlag = (m_raw & (0b11u << 14)) >> 14;
                 chess::MoveType type = chess::MoveType::Normal;
                 if (moveFlag == 1) type = chess::MoveType::Promotion;
                 else if (moveFlag == 2) type = chess::MoveType::EnPassant;
@@ -6333,10 +6335,10 @@ namespace binpack
 
             [[nodiscard]] std::string toString() const
             {
-                const chess::Square to = static_cast<chess::Square>((m_raw & (0b111111 << 0) >> 0));
-                const chess::Square from = static_cast<chess::Square>((m_raw & (0b111111 << 6)) >> 6);
+                const chess::Square to = static_cast<chess::Square>((m_raw & (0b111111u << 0)) >> 0);
+                const chess::Square from = static_cast<chess::Square>((m_raw & (0b111111u << 6)) >> 6);
 
-                const unsigned promotionIndex = (m_raw & (0b11 << 12)) >> 12;
+                const unsigned promotionIndex = (m_raw & (0b11u << 12)) >> 12;
                 const chess::PieceType promotionType = static_cast<chess::PieceType>(static_cast<int>(chess::PieceType::Knight) + promotionIndex);
 
                 std::string r;
@@ -6350,10 +6352,12 @@ namespace binpack
                 return r;
             }
 
+            [[nodiscard]] std::uint32_t raw() const { return m_raw; }
+
         private:
-            std::uint16_t m_raw;
+            std::uint32_t m_raw;
         };
-        static_assert(sizeof(StockfishMove) == sizeof(std::uint16_t));
+        static_assert(sizeof(StockfishMove) == sizeof(std::uint32_t));
 
         struct PackedSfen
         {
@@ -6382,12 +6386,12 @@ namespace binpack
             int8_t game_result;
 
             // When exchanging the file that wrote the teacher aspect with other people
-            //Because this structure size is not fixed, pad it so that it is 40 bytes in any environment.
+            //Because this structure size is not fixed, pad it so that it is 44 bytes in any environment.
             uint8_t padding;
 
-            // 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
+            // 32 + 4 + 2 + 2 + 1 + 1 (with natural alignment) = 44bytes
         };
-        static_assert(sizeof(PackedSfenValue) == DATA_SIZE / 8 + 8);
+        static_assert(sizeof(PackedSfenValue) == DATA_SIZE / 8 + 12);
         // Class that handles bitstream
 
         // useful when doing aspect encoding
@@ -7646,7 +7650,7 @@ namespace binpack
         for(;;)
         {
             inputFile.read(reinterpret_cast<char*>(&psv), sizeof(psv));
-            if (inputFile.gcount() != DATA_SIZE / 8 + 8)
+            if (inputFile.gcount() != DATA_SIZE / 8 + 12)
             {
                 break;
             }
@@ -7737,7 +7741,7 @@ namespace binpack
         for(;;)
         {
             inputFile.read(reinterpret_cast<char*>(&psv), sizeof(psv));
-            if (inputFile.gcount() != DATA_SIZE / 8 + 8)
+            if (inputFile.gcount() != DATA_SIZE / 8 + 12)
             {
                 break;
             }
@@ -7929,7 +7933,7 @@ namespace binpack
         for(;;)
         {
             inputFile.read(reinterpret_cast<char*>(&psv), sizeof(psv));
-            if (inputFile.gcount() != DATA_SIZE / 8 + 8)
+            if (inputFile.gcount() != DATA_SIZE / 8 + 12)
             {
                 break;
             }

@@ -22,7 +22,7 @@ namespace Stockfish::Tools {
 
         // PV first move
         // Used when finding the match rate with the teacher
-        std::uint16_t move;
+        std::uint32_t move;
 
         // Trouble of the phase from the initial phase.
         std::uint16_t gamePly;
@@ -34,10 +34,10 @@ namespace Stockfish::Tools {
         std::int8_t game_result;
 
         // When exchanging the file that wrote the teacher aspect with other people
-        //Because this structure size is not fixed, pad it so that it is 72 bytes in any environment.
+        //Because this structure size is not fixed, pad it so that it is 76 bytes in any environment.
         std::uint8_t padding;
 
-        // 64 + 2 + 2 + 2 + 1 + 1 = 72bytes
+        // 64 + 4 + 2 + 2 + 1 + 1 (with natural alignment) = 76 bytes
     };
 
     // Phase array: PSVector stands for packed sfen vector.
