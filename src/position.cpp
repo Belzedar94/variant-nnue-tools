@@ -23,8 +23,6 @@
 #include <iomanip>
 #include <sstream>
 
-#include "nnue/evaluate_nnue.h"
-
 #include "bitboard.h"
 #include "misc.h"
 #include "movegen.h"
@@ -33,9 +31,6 @@
 #include "tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
-
-#include "tools/packed_sfen.h"
-#include "tools/sfen_packer.h"
 
 using std::string;
 
@@ -1663,7 +1658,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       else
           st->nonPawnMaterial[color_of(captured)] -= PieceValue[MG][captured];
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
           dp.piece[1] = captured;
@@ -1687,13 +1682,14 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
               ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
 
-          if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+          if (Eval::useNNUE)
           {
               dp.handPiece[1] = pieceToHand;
               dp.handCount[1] = pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)];
           }
       }
-      else if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+ 	  
+      else if (Eval::useNNUE)
           dp.handPiece[1] = NO_PIECE;
 
       // Update material hash key and prefetch access to materialTable
@@ -1795,7 +1791,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Move the piece. The tricky Chess960 castling is handled earlier
   if (type_of(m) == DROP)
   {
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Add drop piece
           dp.piece[0] = pc;
@@ -1838,7 +1834,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   }
   else if (type_of(m) != CASTLING)
   {
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           dp.piece[0] = pc;
           dp.from[0] = from;
@@ -1862,7 +1858,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           remove_piece(to);
           put_piece(promotion, to, true, type_of(m) == PIECE_PROMOTION ? pc : NO_PIECE);
 
-          if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+          if (Eval::useNNUE)
           {
               // Promoting pawn to SQ_NONE, promoted piece from SQ_NONE
               dp.to[0] = SQ_NONE;
@@ -1917,7 +1913,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       remove_piece(to);
       put_piece(promotion, to, true, type_of(m) == PIECE_PROMOTION ? pc : NO_PIECE);
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Promoting piece to SQ_NONE, promoted piece from SQ_NONE
           dp.to[0] = SQ_NONE;
@@ -1944,7 +1940,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       remove_piece(to);
       put_piece(demotion, to);
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Demoting piece to SQ_NONE, demoted piece from SQ_NONE
           dp.to[0] = SQ_NONE;
@@ -1983,7 +1979,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       Square gate = gating_square(m);
       Piece gating_piece = make_piece(us, gating_type(m));
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
@@ -2053,7 +2049,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (type_of(bpc) != PAWN)
               st->nonPawnMaterial[bc] -= PieceValue[MG][bpc];
 
-          if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+          if (Eval::useNNUE)
           {
               dp.piece[dp.dirty_num] = bpc;
               dp.handPiece[dp.dirty_num] = NO_PIECE;
@@ -2084,7 +2080,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
                   ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
 
-              if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+              if (Eval::useNNUE)
               {
                   dp.handPiece[dp.dirty_num - 1] = pieceToHand;
                   dp.handCount[dp.dirty_num - 1] = pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)];
@@ -2197,7 +2193,7 @@ void Position::undo_move(Move m) {
   Piece pc = piece_on(to);
 
   assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || (gating() && is_gating(m))
-          || (type_of(m) == PROMOTION && sittuyin_promotion())
+         || (type_of(m) == PROMOTION && sittuyin_promotion())
          || (is_pass(m) && (pass(us) || var->wallOrMove)));
   assert(type_of(st->capturedPiece) != KING);
 
@@ -2333,7 +2329,7 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
   Piece castlingKingPiece = piece_on(Do ? from : to);
   Piece castlingRookPiece = piece_on(Do ? rfrom : rto);
 
-  if (Do && Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+  if (Do && Eval::useNNUE)
   {
       auto& dp = st->dirtyPiece;
       dp.piece[0] = castlingKingPiece;
@@ -2367,7 +2363,6 @@ void Position::do_null_move(StateInfo& newSt) {
   newSt.previous = st;
   st = &newSt;
 
-  // Used by NNUE
   st->dirtyPiece.dirty_num = 0;
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
   st->accumulator.computed[WHITE] = false;
@@ -3404,20 +3399,6 @@ bool Position::pos_is_ok() const {
       }
 
   return true;
-}
-
-// Add a function that directly unpacks for speed. It's pretty tough.
-// Write it by combining packer::unpack() and Position::set().
-// If there is a problem with the passed phase and there is an error, non-zero is returned.
-int Position::set_from_packed_sfen(const Tools::PackedSfen& sfen , StateInfo* si, Thread* th)
-{
-  return Tools::set_from_packed_sfen(*this, sfen, si, th);
-}
-
-// Get the packed sfen. Returns to the buffer specified in the argument.
-void Position::sfen_pack(Tools::PackedSfen& sfen)
-{
-  sfen = Tools::sfen_pack(*this);
 }
 
 } // namespace Stockfish
