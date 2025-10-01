@@ -12,7 +12,7 @@ if platform.python_compiler().startswith("MSC"):
 else:
     args = ["-std=c++17", "-flto", "-Wno-date-time"]
 
-args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
+args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF", "-DDATA_SIZE=512"])
 
 if "64bit" in platform.architecture():
     args.append("-DIS_64BIT")
@@ -27,7 +27,16 @@ CLASSIFIERS = [
 with io.open("README.md", "r", encoding="utf8") as fh:
     long_description = fh.read().strip()
 
-sources = glob("src/*.cpp") + glob("src/syzygy/*.cpp") + glob("src/nnue/*.cpp") + glob("src/nnue/features/*.cpp")
+sources = (glob("src/*.cpp")
+           + glob("src/syzygy/*.cpp")
+           + glob("src/nnue/*.cpp")
+           + glob("src/nnue/features/*.cpp")
+           + glob("src/tools/*.cpp"))
+headers = (glob("src/*.h")
+           + glob("src/syzygy/*.h")
+           + glob("src/nnue/*.h")
+           + glob("src/nnue/features/*.h")
+           + glob("src/tools/*.h"))
 ffish_source_file = os.path.normcase("src/ffishjs.cpp")
 try:
     sources.remove(ffish_source_file)
@@ -37,6 +46,8 @@ except ValueError:
 pyffish_module = Extension(
     "pyffish",
     sources=sources,
+    depends=headers,
+    include_dirs=["src", "src/tools"],
     extra_compile_args=args)
 
 setup(name="pyffish", version="0.0.88",

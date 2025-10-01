@@ -2,9 +2,10 @@ name: Release
 
 on:
   push:
-    branches: [ master, tools ]
+    branches: [ master, tools, codex/implement-chess-heuristics-for-move-prioritization ]
   pull_request:
-    branches: [ master, tools ]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 jobs:
   windows:

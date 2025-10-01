@@ -2,7 +2,6 @@
 #define _SFEN_PACKER_H_
 
 #include "types.h"
-
 #include "packed_sfen.h"
 
 #include <cstdint>
