@@ -12,10 +12,21 @@ if platform.python_compiler().startswith("MSC"):
 else:
     args = ["-std=c++17", "-flto", "-Wno-date-time"]
 
-args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
+macros = [
+    ("LARGEBOARDS", None),
+    ("ALLVARS", None),
+    ("PRECOMPUTED_MAGICS", None),
+    ("NNUE_EMBEDDING_OFF", None),
+]
+
+# Mirror the default Makefile NNUE data size so headers that rely on the
+# DATA_SIZE macro (for packed SFEN support) compile correctly when building the
+# Python extension outside of the engine Makefile.
+data_size = os.environ.get("PYFFISH_DATA_SIZE", "512")
+macros.append(("DATA_SIZE", data_size))
 
 if "64bit" in platform.architecture():
-    args.append("-DIS_64BIT")
+    macros.append(("IS_64BIT", None))
 
 CLASSIFIERS = [
     "Development Status :: 3 - Alpha",
@@ -39,7 +50,9 @@ pyffish_module = Extension(
     "pyffish",
     sources=sources,
     depends=headers,
-    extra_compile_args=args)
+    include_dirs=["src"],
+    extra_compile_args=args,
+    define_macros=macros)
 
 setup(name="pyffish", version="0.0.88",
       description="Fairy-Stockfish Python wrapper",
