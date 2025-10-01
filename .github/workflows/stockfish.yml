@@ -8,9 +8,9 @@ on:
       - codex/implement-chess-heuristics-for-move-prioritization
   pull_request:
     branches:
-      - master
-      - tools
-      - codex/implement-chess-heuristics-for-move-prioritization
+
+      - "**"
+
 jobs:
   Stockfish:
     name: ${{ matrix.config.name }}
