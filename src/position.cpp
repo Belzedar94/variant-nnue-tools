@@ -1707,7 +1707,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       else
           st->nonPawnMaterial[color_of(captured)] -= PieceValue[MG][captured];
 
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE)
       {
           dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
           dp.piece[1] = captured;
@@ -1731,14 +1731,14 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
               ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
 
-          if (Eval::useNNUE)
+          if (Eval::NNUE::useNNUE)
           {
               dp.handPiece[1] = pieceToHand;
               dp.handCount[1] = pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)];
           }
       }
  	  
-      else if (Eval::useNNUE)
+      else if (Eval::NNUE::useNNUE)
           dp.handPiece[1] = NO_PIECE;
 
       // Update material hash key and prefetch access to materialTable
@@ -1840,7 +1840,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Move the piece. The tricky Chess960 castling is handled earlier
   if (type_of(m) == DROP)
   {
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE)
       {
           // Add drop piece
           dp.piece[0] = pc;
@@ -1883,7 +1883,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   }
   else if (type_of(m) != CASTLING)
   {
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE)
       {
           dp.piece[0] = pc;
           dp.from[0] = from;
@@ -1907,7 +1907,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           remove_piece(to);
           put_piece(promotion, to, true, type_of(m) == PIECE_PROMOTION ? pc : NO_PIECE);
 
-          if (Eval::useNNUE)
+          if (Eval::NNUE::useNNUE)
           {
               // Promoting pawn to SQ_NONE, promoted piece from SQ_NONE
               dp.to[0] = SQ_NONE;
@@ -1962,7 +1962,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       remove_piece(to);
       put_piece(promotion, to, true, type_of(m) == PIECE_PROMOTION ? pc : NO_PIECE);
 
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE)
       {
           // Promoting piece to SQ_NONE, promoted piece from SQ_NONE
           dp.to[0] = SQ_NONE;
@@ -1989,7 +1989,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       remove_piece(to);
       put_piece(demotion, to);
 
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE)
       {
           // Demoting piece to SQ_NONE, demoted piece from SQ_NONE
           dp.to[0] = SQ_NONE;
@@ -2030,7 +2030,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       Piece gating_piece = make_piece(us, gateTypeForMove);
       st->gatingPieceType = gateTypeForMove;
 
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE)
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
@@ -2100,7 +2100,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (type_of(bpc) != PAWN)
               st->nonPawnMaterial[bc] -= PieceValue[MG][bpc];
 
-          if (Eval::useNNUE)
+          if (Eval::NNUE::useNNUE)
           {
               dp.piece[dp.dirty_num] = bpc;
               dp.handPiece[dp.dirty_num] = NO_PIECE;
@@ -2131,7 +2131,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
                   ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
 
-              if (Eval::useNNUE)
+              if (Eval::NNUE::useNNUE)
               {
                   dp.handPiece[dp.dirty_num - 1] = pieceToHand;
                   dp.handCount[dp.dirty_num - 1] = pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)];
@@ -2382,7 +2382,7 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
   Piece castlingKingPiece = piece_on(Do ? from : to);
   Piece castlingRookPiece = piece_on(Do ? rfrom : rto);
 
-  if (Do && Eval::useNNUE)
+  if (Do && Eval::NNUE::useNNUE)
   {
       auto& dp = st->dirtyPiece;
       dp.piece[0] = castlingKingPiece;
