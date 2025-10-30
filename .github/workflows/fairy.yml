@@ -3,11 +3,8 @@ on:
   push:
     branches:
       - master
-      - tools
   pull_request:
-    branches:
-      - master
-      - tools
+
 jobs:
   fairy:
     name: ${{ matrix.config.name }}
@@ -15,6 +12,7 @@ jobs:
     env:
       COMPILER: ${{ matrix.config.compiler }}
       COMP: ${{ matrix.config.comp }}
+      CXXFLAGS: "-Werror"
     strategy:
       matrix:
         config:
