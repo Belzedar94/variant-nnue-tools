@@ -12,7 +12,15 @@ if platform.python_compiler().startswith("MSC"):
 else:
     args = ["-std=c++17", "-flto", "-Wno-date-time"]
 
-args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
+data_size = os.environ.get("PYFFISH_DATA_SIZE", os.environ.get("DATA_SIZE", "512"))
+
+args.extend([
+    "-DLARGEBOARDS",
+    "-DALLVARS",
+    "-DPRECOMPUTED_MAGICS",
+    "-DNNUE_EMBEDDING_OFF",
+    f"-DDATA_SIZE={data_size}",
+])
 
 if "64bit" in platform.architecture():
     args.append("-DIS_64BIT")
