@@ -1743,7 +1743,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           }
       }
 
-      else if (Eval::useNNUE)
+      else if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
           dp.handPiece[1] = NO_PIECE;
 
       // Update material hash key and prefetch access to materialTable
@@ -2035,7 +2035,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       Piece gating_piece = make_piece(us, gateTypeForMove);
       st->gatingPieceType = gateTypeForMove;
 
-      if (Eval::useNNUE)
+      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
