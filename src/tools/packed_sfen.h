@@ -4,6 +4,10 @@
 #include <vector>
 #include <cstdint>
 
+#ifndef DATA_SIZE
+#define DATA_SIZE 512
+#endif
+
 namespace Stockfish::Tools {
 
     // packed sfen
