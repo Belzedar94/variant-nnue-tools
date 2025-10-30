@@ -424,17 +424,18 @@ class TestPyffish(unittest.TestCase):
         expected = "8/ppnppppp/8/2n5/2N1P3/2P1BP2/PNPnNNPP/3n4 w - - 0 6"
 
         legal = sf.legal_moves("battlekings", start, [])
-        self.assertIn("d2d1", legal)
+        self.assertIn("d2d1n", legal)
 
-        fen = sf.get_fen("battlekings", start, ["d2d1"])
+        fen = sf.get_fen("battlekings", start, ["d2d1n"])
         self.assertEqual(fen, expected)
 
     def test_chess_promotion_does_not_gate(self):
         start = "8/P7/8/8/8/8/7p/7K w - - 0 1"
         fen = sf.get_fen("chess", start, ["a7a8q"])
         self.assertEqual(fen, "Q7/8/8/8/8/8/7p/7K b - - 0 1")
+
     def test_battlekings_king_spawn_blocked(self):
-        fen = "8/8/8/8/8/3p4/4Q3/8 w - - 0 1"
+        fen = "8/8/8/8/8/4r3/4Q3/4r3 w - - 0 1"
         moves = sf.legal_moves("battlekings", fen, [])
         self.assertFalse(moves)
 
@@ -465,6 +466,35 @@ class TestPyffish(unittest.TestCase):
         fen = "3qk3/pppp1ppp/2nkr3/4p1b1/P1N5/NPPP3P/NBNNPPPN/8 w - - 3 8"
         self._check_immediate_game_end("battlekings", fen, ["c4d6"], True, -sf.VALUE_MATE)
 
+    def test_battlekings_gating_capture_allows_commoner_spawn(self):
+        fen = "1Q1QRQ2/BqqqQQQQ/R2Rqq1Q/QQQQ2qQ/qB1QRRq1/rq1q1BNQ/qQQQNRNP/1R6 b - - 0 57"
+        moves = sf.legal_moves("battlekings", fen, [])
+        self.assertIn("a2b2", moves)
+
+    def test_battlekings_commoner_capture_ends_game_even_if_gate_attacked(self):
+        fen = "B1B1BB1q/qqBBRQqq/RB1qRBqQ/qRBqqB1R/QqqQqB1R/Rqqqqq1q/qkkqqqqq/kqqrq1br b - - 0 64"
+
+        moves = sf.legal_moves("battlekings", fen, [])
+        self.assertNotIn("b2a3", moves)
+
+        white_to_move = "B1B1BB1q/qqBBRQqq/RB1qRBqQ/qRBqqB1R/QqqQqB1R/kqqqqq1q/q1kqqqqq/kqqrq1br w - - 0 65"
+        white_moves = sf.legal_moves("battlekings", white_to_move, [])
+        self.assertIn("a4a3", white_moves)
+
+        self._check_immediate_game_end(
+            "battlekings",
+            white_to_move,
+            ["a4a3"],
+            True,
+            -sf.VALUE_MATE,
+        )
+
+    def test_battlekings_pawn_promotion_lists_all_choices(self):
+        fen = "8/ppppnppp/8/4N3/3PN3/3P4/PPNBpPPP/8 b - - 0 5"
+
+        moves = sf.legal_moves("battlekings", fen, [])
+        promotions = [move for move in moves if move.startswith("e2e1")]
+        self.assertCountEqual(promotions, ["e2e1n", "e2e1b", "e2e1r", "e2e1q"])
     def test_legal_moves(self):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"
         result = sf.legal_moves("capablanca", fen, [])

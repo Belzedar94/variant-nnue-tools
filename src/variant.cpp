@@ -788,12 +788,11 @@ namespace {
         }
         v->stalemateValue = -VALUE_MATE;
         v->nMoveRule = 0;
-        v->nFoldRule = 2;
-        v->nFoldValue = VALUE_MATE;
+        v->nFoldRule = 0;
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionMustAppear = piece_set(COMMONER);
-     //   v->extinctionPseudoRoyal = true;
+        v->extinctionPseudoRoyal = true;
         v->extinctionFirstCaptureWins = true;
         return v;
     }
