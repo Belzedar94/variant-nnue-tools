@@ -23,8 +23,6 @@
 #include <iomanip>
 #include <sstream>
 
-#include "nnue/evaluate_nnue.h"
-
 #include "bitboard.h"
 #include "misc.h"
 #include "movegen.h"
@@ -33,9 +31,6 @@
 #include "tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
-
-#include "tools/packed_sfen.h"
-#include "tools/sfen_packer.h"
 
 using std::string;
 
@@ -222,6 +217,27 @@ void Position::init() {
 
 Key Position::material_key(EndgameEval e) const {
   return st->materialKey ^ Zobrist::endgame[e];
+}
+
+
+PieceType Position::gating_piece_type(Move m, Color c, Piece moving) const {
+
+  if (!gating() || !is_gating(m))
+      return NO_PIECE_TYPE;
+
+  if (type_of(m) == PROMOTION && !gating_from_hand())
+  {
+      if (moving == NO_PIECE)
+          moving = moved_piece(m);
+      if (moving != NO_PIECE)
+      {
+          PieceType forced = forced_gating_type(c, type_of(moving));
+          if (forced != NO_PIECE_TYPE)
+              return forced;
+      }
+  }
+
+  return gating_type(m);
 }
 
 
@@ -604,9 +620,9 @@ void Position::set_check_info(StateInfo* si) const {
       {
           PieceType pt = pop_lsb(ps);
           si->pseudoRoyalCandidates |= pieces(pt);
-          if (count(sideToMove, pt) <= var->extinctionPieceCount + 1)
+          if (extinction_first_capture() || count(sideToMove, pt) <= var->extinctionPieceCount + 1)
               si->pseudoRoyals |= pieces(sideToMove, pt);
-          if (count(~sideToMove, pt) <= var->extinctionPieceCount + 1)
+          if (extinction_first_capture() || count(~sideToMove, pt) <= var->extinctionPieceCount + 1)
               si->pseudoRoyals |= pieces(~sideToMove, pt);
       }
   }
@@ -1268,19 +1284,46 @@ bool Position::legal(Move m) const {
 
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) | to;
 
-  bool gatingCreatesExtinctionPiece =   gating_type(m) != NO_PIECE_TYPE
-                                     && (extinction_piece_types() & piece_set(gating_type(m)));
+  PieceType gateType = gating_piece_type(m, us);
+  bool gatingCreatesExtinctionPiece =   gateType != NO_PIECE_TYPE
+                                     && (extinction_piece_types() & piece_set(gateType));
 
   if (   gating() && is_gating(m)
-      && (   gating_type(m) == KING
+      && (   gateType == KING
           || (   gatingCreatesExtinctionPiece
               && (extinction_pseudo_royal() || extinction_first_capture()))))
   {
       Bitboard occ = occupied | gating_square(m);
       if (type_of(m) == EN_PASSANT)
           occ ^= capture_square(to);
-      if (attackers_to(gating_square(m), occ, ~us))
-          return false;
+
+      Bitboard attackers = attackers_to(gating_square(m), occ, ~us);
+
+      // Ignore attacks from enemy pieces that will be removed as part of the move
+      if (capture(m) && piece_on(to) != NO_PIECE)
+          attackers &= ~SquareBB[to];
+      if (type_of(m) == EN_PASSANT)
+          attackers &= ~SquareBB[capture_square(to)];
+
+      if (attackers)
+      {
+          bool captureEndsGame = false;
+
+          if (   extinction_first_capture()
+              && capture(m))
+          {
+              Square captureSq = type_of(m) == EN_PASSANT ? capture_square(to) : to;
+              Piece captured = piece_on(captureSq);
+
+              if (   captured != NO_PIECE
+                  && color_of(captured) == ~us
+                  && (extinction_piece_types() & piece_set(type_of(captured))))
+                  captureEndsGame = true;
+          }
+
+          if (!captureEndsGame)
+              return false;
+      }
   }
 
   // Flying general rule and bikjang
@@ -1501,7 +1544,7 @@ bool Position::gives_check(Move m) const {
 
   // Is there a check by gated pieces?
   if (    gating() && is_gating(m)
-      && attacks_bb(sideToMove, gating_type(m), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
+      && attacks_bb(sideToMove, gating_piece_type(m, sideToMove), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
       return true;
 
   // Petrified piece can't give check
@@ -1618,6 +1661,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->capturedpromoted = is_promoted(to);
   st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
   st->pass = is_pass(m);
+  st->gatingPieceType = NO_PIECE_TYPE;
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE
@@ -1663,7 +1707,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       else
           st->nonPawnMaterial[color_of(captured)] -= PieceValue[MG][captured];
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           dp.dirty_num = 2;  // 1 piece moved, 1 piece captured
           dp.piece[1] = captured;
@@ -1687,13 +1731,14 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
               ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
 
-          if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+          if (Eval::useNNUE)
           {
               dp.handPiece[1] = pieceToHand;
               dp.handCount[1] = pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)];
           }
       }
-      else if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+ 	  
+      else if (Eval::useNNUE)
           dp.handPiece[1] = NO_PIECE;
 
       // Update material hash key and prefetch access to materialTable
@@ -1795,7 +1840,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Move the piece. The tricky Chess960 castling is handled earlier
   if (type_of(m) == DROP)
   {
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Add drop piece
           dp.piece[0] = pc;
@@ -1838,7 +1883,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   }
   else if (type_of(m) != CASTLING)
   {
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           dp.piece[0] = pc;
           dp.from[0] = from;
@@ -1862,7 +1907,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           remove_piece(to);
           put_piece(promotion, to, true, type_of(m) == PIECE_PROMOTION ? pc : NO_PIECE);
 
-          if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+          if (Eval::useNNUE)
           {
               // Promoting pawn to SQ_NONE, promoted piece from SQ_NONE
               dp.to[0] = SQ_NONE;
@@ -1917,7 +1962,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       remove_piece(to);
       put_piece(promotion, to, true, type_of(m) == PIECE_PROMOTION ? pc : NO_PIECE);
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Promoting piece to SQ_NONE, promoted piece from SQ_NONE
           dp.to[0] = SQ_NONE;
@@ -1944,7 +1989,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       remove_piece(to);
       put_piece(demotion, to);
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Demoting piece to SQ_NONE, demoted piece from SQ_NONE
           dp.to[0] = SQ_NONE;
@@ -1981,16 +2026,18 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   if (gating() && is_gating(m))
   {
       Square gate = gating_square(m);
-      Piece gating_piece = make_piece(us, gating_type(m));
+      PieceType gateTypeForMove = gating_piece_type(m, us, pc);
+      Piece gating_piece = make_piece(us, gateTypeForMove);
+      st->gatingPieceType = gateTypeForMove;
 
-      if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+      if (Eval::useNNUE)
       {
           // Add gating piece
           dp.piece[dp.dirty_num] = gating_piece;
           if (gating_from_hand())
           {
               dp.handPiece[dp.dirty_num] = gating_piece;
-              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
+              dp.handCount[dp.dirty_num] = pieceCountInHand[us][gateTypeForMove];
           }
           else
           {
@@ -2053,7 +2100,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           if (type_of(bpc) != PAWN)
               st->nonPawnMaterial[bc] -= PieceValue[MG][bpc];
 
-          if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+          if (Eval::useNNUE)
           {
               dp.piece[dp.dirty_num] = bpc;
               dp.handPiece[dp.dirty_num] = NO_PIECE;
@@ -2084,7 +2131,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               k ^=  Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)] - 1]
                   ^ Zobrist::inHand[pieceToHand][pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)]];
 
-              if (Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+              if (Eval::useNNUE)
               {
                   dp.handPiece[dp.dirty_num - 1] = pieceToHand;
                   dp.handCount[dp.dirty_num - 1] = pieceCountInHand[color_of(pieceToHand)][type_of(pieceToHand)];
@@ -2197,7 +2244,7 @@ void Position::undo_move(Move m) {
   Piece pc = piece_on(to);
 
   assert(type_of(m) == DROP || empty(from) || type_of(m) == CASTLING || (gating() && is_gating(m))
-          || (type_of(m) == PROMOTION && sittuyin_promotion())
+         || (type_of(m) == PROMOTION && sittuyin_promotion())
          || (is_pass(m) && (pass(us) || var->wallOrMove)));
   assert(type_of(st->capturedPiece) != KING);
 
@@ -2232,7 +2279,9 @@ void Position::undo_move(Move m) {
   // Remove gated piece
   if (gating() && is_gating(m))
   {
-      Piece gating_piece = make_piece(us, gating_type(m));
+      PieceType gateTypeForMove = st->gatingPieceType != NO_PIECE_TYPE ? st->gatingPieceType
+                                                                       : gating_piece_type(m, us);
+      Piece gating_piece = make_piece(us, gateTypeForMove);
       remove_piece(gating_square(m));
       board[gating_square(m)] = NO_PIECE;
       if (gating_from_hand())
@@ -2333,7 +2382,7 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
   Piece castlingKingPiece = piece_on(Do ? from : to);
   Piece castlingRookPiece = piece_on(Do ? rfrom : rto);
 
-  if (Do && Eval::NNUE::useNNUE != Eval::NNUE::UseNNUEMode::False)
+  if (Do && Eval::useNNUE)
   {
       auto& dp = st->dirtyPiece;
       dp.piece[0] = castlingKingPiece;
@@ -2367,7 +2416,6 @@ void Position::do_null_move(StateInfo& newSt) {
   newSt.previous = st;
   st = &newSt;
 
-  // Used by NNUE
   st->dirtyPiece.dirty_num = 0;
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
   st->accumulator.computed[WHITE] = false;
@@ -3404,20 +3452,6 @@ bool Position::pos_is_ok() const {
       }
 
   return true;
-}
-
-// Add a function that directly unpacks for speed. It's pretty tough.
-// Write it by combining packer::unpack() and Position::set().
-// If there is a problem with the passed phase and there is an error, non-zero is returned.
-int Position::set_from_packed_sfen(const Tools::PackedSfen& sfen , StateInfo* si, Thread* th)
-{
-  return Tools::set_from_packed_sfen(*this, sfen, si, th);
-}
-
-// Get the packed sfen. Returns to the buffer specified in the argument.
-void Position::sfen_pack(Tools::PackedSfen& sfen)
-{
-  sfen = Tools::sfen_pack(*this);
 }
 
 } // namespace Stockfish
