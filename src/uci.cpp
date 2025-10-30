@@ -93,31 +93,13 @@ namespace {
   }
 
 
-  // setoption() is called when engine receives the "setoption" UCI command. The
-  // function updates the UCI option ("name") to the given value ("value").
+  void apply_option(string name, const string& value) {
 
-  void setoption(istringstream& is) {
-
-    string token, name, value;
-
-    is >> token; // Consume "name" token
-
-    if (CurrentProtocol == UCCI)
-        name = token;
-    else
-    // Read option name (can contain spaces)
-    while (is >> token && token != "value")
-        name += (name.empty() ? "" : " ") + token;
-
-    // Read option value (can contain spaces)
-    while (is >> token)
-        value += (value.empty() ? "" : " ") + token;
-
-    if (Options.count(name))
-        Options[name] = value;
+    if (UCI::Options.count(name))
+        UCI::Options[name] = value;
     // Deal with option name aliases in UCI dialects
-    else if (is_valid_option(Options, name))
-        Options[name] = value;
+    else if (UCI::is_valid_option(UCI::Options, name))
+        UCI::Options[name] = value;
     else
         sync_cout << "No such option: " << name << sync_endl;
   }
@@ -205,7 +187,7 @@ namespace {
             else
                trace_eval(pos);
         }
-        else if (token == "setoption")  setoption(is);
+        else if (token == "setoption")  UCI::setoption(is);
         else if (token == "position")   position(pos, is, states);
         else if (token == "ucinewgame") { Search::clear(); elapsed = now(); } // Search::clear() may take some while
     }
@@ -285,6 +267,31 @@ namespace {
   }
 
 } // namespace
+
+void UCI::setoption(const string& name, const string& value) {
+  apply_option(name, value);
+}
+
+void UCI::setoption(istream& is) {
+
+  string token, name, value;
+
+  if (!(is >> token))
+      return;
+
+  if (CurrentProtocol == UCCI)
+      name = token;
+  else
+  // Read option name (can contain spaces)
+  while (is >> token && token != "value")
+      name += (name.empty() ? "" : " ") + token;
+
+  // Read option value (can contain spaces)
+  while (is >> token)
+      value += (value.empty() ? "" : " ") + token;
+
+  setoption(name, value);
+}
 
 
 /// UCI::loop() waits for a command from stdin, parses it and calls the appropriate
@@ -373,7 +380,7 @@ void UCI::loop(int argc, char* argv[]) {
       else if (CurrentProtocol == XBOARD)
           XBoard::stateMachine->process_command(token, is);
 
-      else if (token == "setoption")  setoption(is);
+      else if (token == "setoption")  UCI::setoption(is);
       // UCCI-specific banmoves command
       else if (token == "banmoves")
           while (is >> token)

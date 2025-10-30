@@ -76,7 +76,7 @@ struct RootMove {
   Value previousScore = -VALUE_INFINITE;
   int selDepth = 0;
   int tbRank = 0;
-  Value tbScore;
+  Value tbScore = VALUE_ZERO;
   std::vector<Move> pv;
 };
 
