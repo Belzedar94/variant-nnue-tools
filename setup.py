@@ -39,6 +39,13 @@ pyffish_module = Extension(
     "pyffish",
     sources=sources,
     depends=headers,
+    include_dirs=[
+        "src",
+        "src/tools",
+        "src/syzygy",
+        "src/nnue",
+        "src/nnue/features",
+    ],
     extra_compile_args=args)
 
 setup(name="pyffish", version="0.0.88",
