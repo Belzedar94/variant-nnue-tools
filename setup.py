@@ -35,10 +35,14 @@ try:
 except ValueError:
     print(f"ffish_source_file {ffish_source_file} was not found in sources {sources}.")
 
+here = os.path.abspath(os.path.dirname(__file__))
+src_dir = os.path.join(here, "src")
+
 pyffish_module = Extension(
     "pyffish",
     sources=sources,
     depends=headers,
+    include_dirs=[src_dir],
     extra_compile_args=args)
 
 setup(name="pyffish", version="0.0.88",
