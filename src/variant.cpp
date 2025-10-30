@@ -760,20 +760,20 @@ namespace {
     // https://www.chessvariants.com/rules/battle-of-kings-
     Variant* battle_kings_variant() {
         Variant* v = chess_variant_base()->init();
-			v->remove_piece(KING);
-        v->add_piece(COMMONER, 'k'); 
-		v->pieceValue[MG][COMMONER] = -3500;
-		v->pieceValue[EG][COMMONER] = -3500;
-		v->pieceValue[MG][PAWN] = 1880;
-		v->pieceValue[EG][PAWN] = 1750;
-		v->pieceValue[MG][KNIGHT] = 1780;
-		v->pieceValue[EG][KNIGHT] = 1650;
-		v->pieceValue[MG][BISHOP] = 620;
-		v->pieceValue[EG][BISHOP] = 700;
-		v->pieceValue[MG][ROOK] =280;
-		v->pieceValue[EG][ROOK]=380;
-		v->pieceValue[MG][QUEEN] = 30;
-		v->pieceValue[EG][QUEEN] = 30;
+        v->remove_piece(KING);
+        v->add_piece(COMMONER, 'k');
+        v->pieceValue[MG][COMMONER] = -3500;
+        v->pieceValue[EG][COMMONER] = -3500;
+        v->pieceValue[MG][PAWN] = 1880;
+        v->pieceValue[EG][PAWN] = 1750;
+        v->pieceValue[MG][KNIGHT] = 1780;
+        v->pieceValue[EG][KNIGHT] = 1650;
+        v->pieceValue[MG][BISHOP] = 620;
+        v->pieceValue[EG][BISHOP] = 700;
+        v->pieceValue[MG][ROOK] = 280;
+        v->pieceValue[EG][ROOK] = 380;
+        v->pieceValue[MG][QUEEN] = 30;
+        v->pieceValue[EG][QUEEN] = 30;
         v->startFen = "8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1";
         v->castling = false;
         v->gating = true;
@@ -788,12 +788,11 @@ namespace {
         }
         v->stalemateValue = -VALUE_MATE;
         v->nMoveRule = 0;
-        v->nFoldRule = 2;
-        v->nFoldValue = VALUE_MATE;
+        v->nFoldRule = 0;
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionMustAppear = piece_set(COMMONER);
-     //   v->extinctionPseudoRoyal = true;
+        v->extinctionPseudoRoyal = true;
         v->extinctionFirstCaptureWins = true;
         return v;
     }
@@ -2081,7 +2080,6 @@ Variant* Variant::conclude() {
         ps ^= pt;
         assert(pt != nnueKing || !ps);
 
-        pieceIndex[pt] = i;
         for (Color c : { WHITE, BLACK})
         {
             pieceSquareIndex[c][make_piece(c, pt)] = 2 * i * nnueSquares;
@@ -2097,7 +2095,7 @@ Variant* Variant::conclude() {
     // Variants might be initialized before bitboards, so do not rely on precomputed bitboards (like SquareBB).
     // Furthermore conclude() might be called on invalid configuration during validation,
     // therefore skip proper initialization in case of invalid board size.
-    nnueKingSquare = 0;
+    int nnueKingSquare = 0;
     if (nnueKing && nnueSquares <= SQUARE_NB)
         for (Square s = SQ_A1; s < nnueSquares; ++s)
         {
@@ -2114,17 +2112,7 @@ Variant* Variant::conclude() {
     nnueDimensions = nnueKingSquare * nnuePieceIndices;
 
     // Determine maximum piece count
-    std::istringstream ss(startFen);
-    ss >> std::noskipws;
-    unsigned char token;
-    nnueMaxPieces = 0;
-    while ((ss >> token) && !isspace(token))
-    {
-        if (pieceToChar.find(token) != std::string::npos || pieceToCharSynonyms.find(token) != std::string::npos)
-            nnueMaxPieces++;
-    }
-    if (twoBoards)
-        nnueMaxPieces *= 2;
+    nnueMaxPieces = 64;
 
     // For endgame evaluation to be applicable, no special win rules must apply.
     // Furthermore, rules significantly changing game mechanics also invalidate it.

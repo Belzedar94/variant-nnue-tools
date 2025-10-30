@@ -19,12 +19,10 @@
 #include <cstdlib>
 #include <cassert>
 #include <cmath>
-#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 
-#include "nnue/evaluate_nnue.h"
 #include "evaluate.h"
 #include "movegen.h"
 #include "position.h"
@@ -35,13 +33,6 @@
 #include "uci.h"
 #include "xboard.h"
 #include "syzygy/tbprobe.h"
-
-#include "tools/validate_training_data.h"
-#include "tools/training_data_generator.h"
-#include "tools/training_data_generator_nonpv.h"
-#include "tools/convert.h"
-#include "tools/transform.h"
-#include "tools/stats.h"
 
 using namespace std;
 
@@ -105,7 +96,7 @@ namespace {
   // setoption() is called when engine receives the "setoption" UCI command. The
   // function updates the UCI option ("name") to the given value ("value").
 
-  void setoption_from_stream(istringstream& is) {
+  void setoption(istringstream& is) {
 
     string token, name, value;
 
@@ -214,7 +205,7 @@ namespace {
             else
                trace_eval(pos);
         }
-        else if (token == "setoption")  setoption_from_stream(is);
+        else if (token == "setoption")  setoption(is);
         else if (token == "position")   position(pos, is, states);
         else if (token == "ucinewgame") { Search::clear(); elapsed = now(); } // Search::clear() may take some while
     }
@@ -229,100 +220,27 @@ namespace {
          << "\nNodes/second    : " << 1000 * nodes / elapsed << endl;
   }
 
-} // namespace
+  // The win rate model returns the probability (per mille) of winning given an eval
+  // and a game-ply. The model fits rather accurately the LTC fishtest statistics.
+  int win_rate_model(Value v, int ply) {
 
-void UCI::setoption(const std::string& name, const std::string& value)
-{
-    if (Options.count(name))
-        Options[name] = value;
-    else
-        sync_cout << "No such option: " << name << sync_endl;
-}
+     // The model captures only up to 240 plies, so limit input (and rescale)
+     double m = std::min(240, ply) / 64.0;
 
-// The win rate model returns the probability (per mille) of winning given an eval
-// and a game-ply. The model fits rather accurately the LTC fishtest statistics.
-int win_rate_model(Value v, int ply) {
+     // Coefficients of a 3rd order polynomial fit based on fishtest data
+     // for two parameters needed to transform eval to the argument of a
+     // logistic function.
+     double as[] = {-3.68389304,  30.07065921, -60.52878723, 149.53378557};
+     double bs[] = {-2.0181857,   15.85685038, -29.83452023,  47.59078827};
+     double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
+     double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
 
-   // The model captures only up to 240 plies, so limit input (and rescale)
-   double m = std::min(240, ply) / 64.0;
+     // Transform eval to centipawns with limited range
+     double x = std::clamp(double(100 * v) / PawnValueEg, -2000.0, 2000.0);
 
-   // Coefficients of a 3rd order polynomial fit based on fishtest data
-   // for two parameters needed to transform eval to the argument of a
-   // logistic function.
-   double as[] = {-8.24404295, 64.23892342, -95.73056462, 153.86478679};
-   double bs[] = {-3.37154371, 28.44489198, -56.67657741,  72.05858751};
-   double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
-   double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
-
-   // Transform eval to centipawns with limited range
-   double x = std::clamp(double(100 * v) / PawnValueEg, -1000.0, 1000.0);
-
-   // Return win rate in per mille (rounded to nearest)
-   return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
-}
-
-// --------------------
-// Call qsearch(),search() directly for testing
-// --------------------
-
-void qsearch_cmd(Position& pos)
-{
-  cout << "qsearch : ";
-  auto pv = Search::qsearch(pos);
-  cout << "Value = " << pv.first << " , " << UCI::value(pv.first) << " , PV = ";
-  for (auto m : pv.second)
-    cout << UCI::move(pos, m) << " ";
-  cout << endl;
-}
-
-void search_cmd(Position& pos, istringstream& is)
-{
-  string token;
-  int depth = 1;
-  int multi_pv = (int)Options["MultiPV"];
-  while (is >> token)
-  {
-    if (token == "depth")
-      is >> depth;
-    if (token == "multipv")
-      is >> multi_pv;
+     // Return win rate in per mille (rounded to nearest)
+     return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
   }
-
-  cout << "search depth = " << depth << " , multi_pv = " << multi_pv << " : ";
-  auto pv = Search::search(pos, depth, multi_pv);
-  cout << "Value = " << pv.first << " , " << UCI::value(pv.first) << " , PV = ";
-  for (auto m : pv.second)
-    cout << UCI::move(pos, m) << " ";
-  cout << endl;
-}
-
-void search_mcts_cmd(Position& pos, istringstream& is)
-{
-  string token;
-  int nodes = 1000;
-  int leafDepth = 3;
-  float explorationFactor = 0.25f;
-  while (is >> token)
-  {
-    if (token == "nodes")
-      is >> nodes;
-    if (token == "leaf_depth")
-      is >> leafDepth;
-    if (token == "exploration_factor")
-      is >> explorationFactor;
-  }
-
-  cout << "search nodes = " << nodes << " , leaf_depth = " << leafDepth << " :\n";
-  auto continuations = Search::MCTS::search_mcts_multipv(pos, nodes, leafDepth, explorationFactor);
-  for (auto&& [numVisits, value, actionValue, pv] : continuations)
-  {
-    cout << "NumVisits = " << numVisits << " , Value = " << UCI::value(value) << " , ActionValue = " << actionValue << " , PV = ";
-    for (auto m : pv)
-      cout << UCI::move(pos, m) << " ";
-    cout << endl;
-  }
-  cout << endl;
-}
 
   // load() is called when engine receives the "load" or "check" command.
   // The function reads variant configuration files.
@@ -366,82 +284,7 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     }
   }
 
-  // write_trainer_config() writes the variant.h and variant.py for the trainer
-  void write_trainer_config(istringstream& is) {
-    string variant = Options["UCI_Variant"];
-    string path = "";
-
-    is >> variant;
-    ostream* varianth = &std::cerr;
-    ostream* variantpy = &std::cerr;
-    ofstream out1;
-    ofstream out2;
-    if (std::getline(is >> std::ws, path) && !path.empty())
-    {
-        path.erase(path.find_last_not_of(" \t\n\r\f\v") + 1);
-        out1.open(path + "/variant.h");
-        out2.open(path + "/variant.py");
-        if (out1.is_open())
-            varianth = &out1;
-        if (out2.is_open())
-            variantpy = &out2;
-    }
-
-    const Variant* v = variants.find(variant)->second;
-    std::cerr << "Writing config for variant " + variant << std::endl;
-
-    const int dataSize = (v->maxFile + 1) * (v->maxRank + 1) + v->nnueMaxPieces * 5
-                        + popcount(v->pieceTypes) * 2 * 5 + 50 > 512 ? 1024 : 512;
-
-    if (dataSize > DATA_SIZE)
-        std::cerr << std::endl << "Warning: Recommended training data size " << dataSize
-                  << " not compatible with current version. "
-                  << "Please recompile with largedata=yes" << std::endl << std::endl;
-
-    if (out1.is_open())
-        std::cerr << "Writing variant.h to " << path << std::endl;
-    else
-        std::cerr << "---------------- variant.h ---------------------" << std::endl;
-    *varianth
-    << "#define FILES " << v->maxFile + 1 << std::endl
-    << "#define RANKS " << v->maxRank + 1 << std::endl
-    << "#define PIECE_TYPES " << popcount(v->pieceTypes) << std::endl
-    << "#define PIECE_COUNT " << v->nnueMaxPieces << std::endl
-    << "#define POCKETS " << (v->nnueUsePockets ? "true" : "false") << std::endl
-    << "#define KING_SQUARES " << v->nnueKingSquare << std::endl
-    << "#define DATA_SIZE " << DATA_SIZE << std::endl;
-
-    if (out1.is_open()) {
-        out1.close();
-    }
-
-    if (out2.is_open())
-        std::cerr << "Writing variant.py to " << path << std::endl;
-    else
-        std::cerr << "---------------- variant.py --------------------" << std::endl;
-    *variantpy
-    << "RANKS = " << v->maxRank + 1 << std::endl
-    << "FILES = " << v->maxFile + 1 << std::endl
-    << "SQUARES = RANKS * FILES" << std::endl
-    << "KING_SQUARES = " << v->nnueKingSquare << std::endl
-    << "PIECE_TYPES = " << popcount(v->pieceTypes) << std::endl
-    << "PIECES = 2 * PIECE_TYPES" << std::endl
-    << "USE_POCKETS = " << (v->nnueUsePockets ? "True" : "False") << std::endl
-    << "POCKETS = 2 * FILES if USE_POCKETS else 0" << std::endl
-    << std::endl
-    << "PIECE_VALUES = {" << std::endl;
-    for (PieceSet ps = v->pieceTypes; ps;)
-    {
-        PieceType pt = pop_lsb(ps);
-        if (pt != v->nnueKing)
-            *variantpy << "  " << v->pieceIndex[pt] + 1 << ": " << PieceValue[MG][pt] << "," << std::endl;
-    }
-    *variantpy << "}" << std::endl;
-
-    if (out2.is_open()) {
-        out2.close();
-    }
-  }
+} // namespace
 
 
 /// UCI::loop() waits for a command from stdin, parses it and calls the appropriate
@@ -530,7 +373,7 @@ void UCI::loop(int argc, char* argv[]) {
       else if (CurrentProtocol == XBOARD)
           XBoard::stateMachine->process_command(token, is);
 
-      else if (token == "setoption")  setoption_from_stream(is);
+      else if (token == "setoption")  setoption(is);
       // UCCI-specific banmoves command
       else if (token == "banmoves")
           while (is >> token)
@@ -557,7 +400,6 @@ void UCI::loop(int argc, char* argv[]) {
       }
       else if (token == "load")     { load(is); argc = 1; } // continue reading stdin
       else if (token == "check")    load(is, true);
-      else if (token == "trainer_config") write_trainer_config(is);
       // UCI-Cyclone omits the "position" keyword
       else if (token == "fen" || token == "startpos")
       {
@@ -570,26 +412,6 @@ void UCI::loop(int argc, char* argv[]) {
 #endif
           is.seekg(0);
           position(pos, is, states);
-      }
-      else if (token == "generate_training_data") Tools::generate_training_data(is);
-      else if (token == "generate_training_data") Tools::generate_training_data_nonpv(is);
-      else if (token == "convert") Tools::convert(is);
-      else if (token == "validate_training_data") Tools::validate_training_data(is);
-      else if (token == "convert_bin") Tools::convert_bin(is);
-      else if (token == "convert_plain") Tools::convert_plain(is);
-      else if (token == "convert_bin_from_pgn_extract") Tools::convert_bin_from_pgn_extract(is);
-      else if (token == "transform") Tools::transform(is);
-      else if (token == "gather_statistics") Tools::Stats::gather_statistics(is);
-
-      // Command to call qsearch(),search() directly for testing
-      else if (token == "qsearch") qsearch_cmd(pos);
-      else if (token == "search_mcts") search_mcts_cmd(pos, is);
-      else if (token == "search") search_cmd(pos, is);
-      else if (token == "tasktest")
-      {
-        Threads.execute_with_workers([](auto& th) {
-          std::cout << th.id() << '\n';
-        });
       }
       else if (!token.empty() && token[0] != '#')
           sync_cout << "Unknown command: " << cmd << sync_endl;
@@ -717,23 +539,7 @@ string UCI::move(const Position& pos, Move m) {
       move += "," + UCI::square(pos, to) + UCI::square(pos, gating_square(m));
 
   if (type_of(m) == PROMOTION)
-  {
-      PieceType forced = NO_PIECE_TYPE;
-      if (pos.gating() && is_gating(m) && !pos.gating_from_hand())
-      {
-          Piece moving = pos.moved_piece(m);
-          if (moving != NO_PIECE)
-              forced = pos.forced_gating_type(pos.side_to_move(), type_of(moving));
-      }
-
-      bool autoPromotion =   pos.gating()
-                          && forced != NO_PIECE_TYPE
-                          && forced == promotion_type(m)
-                          && forced == gating_type(m);
-
-      if (!autoPromotion)
-          move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
-  }
+      move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
   else if (type_of(m) == PIECE_PROMOTION)
       move += '+';
   else if (type_of(m) == PIECE_DEMOTION)
@@ -742,7 +548,7 @@ string UCI::move(const Position& pos, Move m) {
   {
       if (pos.gating_from_hand())
       {
-          move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
+          move += pos.piece_to_char()[make_piece(BLACK, pos.gating_piece_type(m))];
           if (gating_square(m) != from)
               move += UCI::square(pos, gating_square(m));
       }
@@ -785,7 +591,8 @@ Move UCI::to_move(const Position& pos, string& str) {
           PieceType forced = pos.gating() && is_gating(m) && !pos.gating_from_hand() && moving != NO_PIECE
                               ? pos.forced_gating_type(pos.side_to_move(), type_of(moving))
                               : NO_PIECE_TYPE;
-          if (forced != NO_PIECE_TYPE && forced == promotion_type(m) && forced == gating_type(m)
+          PieceType gatePiece = pos.gating_piece_type(m);
+          if (forced != NO_PIECE_TYPE && forced == promotion_type(m) && forced == gatePiece
               && str == uciMove.substr(0, 4))
               return m;
       }
