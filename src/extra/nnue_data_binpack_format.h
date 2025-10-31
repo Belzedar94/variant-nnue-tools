@@ -573,7 +573,7 @@ namespace chess
 
         [[nodiscard]] static constexpr std::string_view toString(EnumType c) noexcept
         {
-            return std::string_view("wb" + ordinal(c), 1);
+            return std::string_view(&"wb"[ordinal(c)], 1);
         }
 
         [[nodiscard]] static constexpr char toChar(EnumType c) noexcept
@@ -647,7 +647,7 @@ namespace chess
 
         [[nodiscard]] static constexpr std::string_view toString(EnumType p, Color c) noexcept
         {
-            return std::string_view("PpNnBbRrQqKk " + (chess::ordinal(p) * 2 + chess::ordinal(c)), 1);
+            return std::string_view(&"PpNnBbRrQqKk "[chess::ordinal(p) * 2 + chess::ordinal(c)], 1);
         }
 
         [[nodiscard]] static constexpr char toChar(EnumType p, Color c) noexcept
@@ -694,7 +694,8 @@ namespace chess
             assert(type != PieceType::None || color == Color::White);
         }
 
-        constexpr Piece& operator=(const Piece& other) = default;
+        constexpr Piece(const Piece&) = default;
+        constexpr Piece& operator=(const Piece&) = default;
 
         [[nodiscard]] constexpr friend bool operator==(Piece lhs, Piece rhs) noexcept
         {
@@ -800,7 +801,7 @@ namespace chess
 
         [[nodiscard]] static constexpr std::string_view toString(EnumType p) noexcept
         {
-            return std::string_view("PpNnBbRrQqKk " + ordinal(p), 1);
+            return std::string_view(&"PpNnBbRrQqKk "[ordinal(p)], 1);
         }
 
         [[nodiscard]] static constexpr char toChar(EnumType p) noexcept
@@ -966,7 +967,7 @@ namespace chess
         {
             assert(ordinal(c) >= 0 && ordinal(c) < 8);
 
-            return std::string_view("abcdefgh" + ordinal(c), 1);
+            return std::string_view(&"abcdefgh"[ordinal(c)], 1);
         }
 
         [[nodiscard]] static constexpr std::optional<File> fromChar(char c) noexcept
@@ -1008,7 +1009,7 @@ namespace chess
         {
             assert(ordinal(c) >= 0 && ordinal(c) < 8);
 
-            return std::string_view("12345678" + ordinal(c), 1);
+            return std::string_view(&"12345678"[ordinal(c)], 1);
         }
 
         [[nodiscard]] static constexpr std::optional<Rank> fromChar(char c) noexcept
@@ -1402,19 +1403,17 @@ namespace chess
         {
             assert(sq.isOk());
 
-            return
-                std::string_view(
-                    "a1b1c1d1e1f1g1h1"
-                    "a2b2c2d2e2f2g2h2"
-                    "a3b3c3d3e3f3g3h3"
-                    "a4b4c4d4e4f4g4h4"
-                    "a5b5c5d5e5f5g5h5"
-                    "a6b6c6d6e6f6g6h6"
-                    "a7b7c7d7e7f7g7h7"
-                    "a8b8c8d8e8f8g8h8"
-                    + (ordinal(sq) * 2),
-                    2
-                );
+            static constexpr char squares[] =
+                "a1b1c1d1e1f1g1h1"
+                "a2b2c2d2e2f2g2h2"
+                "a3b3c3d3e3f3g3h3"
+                "a4b4c4d4e4f4g4h4"
+                "a5b5c5d5e5f5g5h5"
+                "a6b6c6d6e6f6g6h6"
+                "a7b7c7d7e7f7g7h7"
+                "a8b8c8d8e8f8g8h8";
+
+            return std::string_view(&squares[ordinal(sq) * 2], 2);
         }
 
         [[nodiscard]] static constexpr std::optional<Square> fromString(std::string_view sv) noexcept
@@ -2143,6 +2142,9 @@ namespace chess
         {
         }
 
+        constexpr Bitboard(const Bitboard&) = default;
+        constexpr Bitboard& operator=(const Bitboard&) = default;
+
     private:
         constexpr explicit Bitboard(Square sq) noexcept :
             m_squares(static_cast<std::uint64_t>(1ULL) << ordinal(sq))
@@ -2571,8 +2573,6 @@ namespace chess
 
             m_squares &= m_squares - 1;
         }
-
-        constexpr Bitboard& operator=(const Bitboard& other) = default;
 
     private:
         std::uint64_t m_squares;
@@ -5302,10 +5302,10 @@ namespace chess
                 if (
                     (file == epSquare.file())
                     && (
-                    ((rank == rank4) & (sideToMove == Color::Black))
-                        | ((rank == rank5) & (sideToMove == Color::White))
-                        )
+                        ((rank == rank4) && (sideToMove == Color::Black))
+                        || ((rank == rank5) && (sideToMove == Color::White))
                     )
+                )
                 {
                     return 12;
                 }
@@ -6076,7 +6076,7 @@ namespace chess
 
         m_epSquare = Square::none();
         // for double pushes move index differs by 16 or -16;
-        if((movedPiece == PieceType::Pawn) & ((ordinal(move.to) ^ ordinal(move.from)) == 16))
+        if ((movedPiece == PieceType::Pawn) && ((ordinal(move.to) ^ ordinal(move.from)) == 16))
         {
             m_epSquare = fromOrdinal<Square>((ordinal(move.to) + ordinal(move.from)) >> 1);
         }
