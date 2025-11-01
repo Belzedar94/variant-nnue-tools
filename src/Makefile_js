@@ -24,12 +24,13 @@ SRCS = ffishjs.cpp benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.c
 	nnue/features/half_ka_v2_variants.cpp
 
 CXX=emcc
-CXXFLAGS += --bind -DNNUE_EMBEDDING_OFF -DNO_THREADS -std=c++17 -Wall
+CXXFLAGS += --bind -DNNUE_EMBEDDING_OFF -DNO_THREADS -std=c++17 -Wall -I.
 
 largeboards = yes
 all = yes
 optimize = yes
 debug = no
+largedata = no
 
 ### Debugging
 ifeq ($(debug),no)
@@ -52,6 +53,12 @@ endif
 # Enable all variants, even heavyweight ones like duck and amazons
 ifneq ($(all),no)
 	CXXFLAGS += -DALLVARS
+endif
+
+ifeq ($(largedata),yes)
+	CXXFLAGS += -DDATA_SIZE=1024
+else
+	CXXFLAGS += -DDATA_SIZE=512
 endif
 
 ### Compile as ES6/ES2015 module
