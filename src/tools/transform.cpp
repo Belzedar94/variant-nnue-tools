@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -246,10 +247,10 @@ namespace Stockfish::Tools
     {
         std::ifstream fens_file(params.input_filename);
 
-        auto next_fen = [&fens_file, mutex = std::mutex{}]() mutable -> std::optional<std::string>{
+        auto next_fen = [&fens_file, mutex = std::make_shared<std::mutex>()]() mutable -> std::optional<std::string>{
             std::string fen;
 
-            std::unique_lock lock(mutex);
+            std::unique_lock lock(*mutex);
 
             if (std::getline(fens_file, fen) && fen.size() >= 10)
             {
@@ -349,12 +350,12 @@ namespace Stockfish::Tools
     {
         // TODO: Use SfenReader once it works correctly in sequential mode. See issue #271
         auto in = Tools::open_sfen_input_file(params.input_filename);
-        auto readsome = [&in, mutex = std::mutex{}](int n) mutable -> PSVector {
+        auto readsome = [&in, mutex = std::make_shared<std::mutex>()](int n) mutable -> PSVector {
 
             PSVector psv;
             psv.reserve(n);
 
-            std::unique_lock lock(mutex);
+            std::unique_lock lock(*mutex);
 
             for (int i = 0; i < n; ++i)
             {
