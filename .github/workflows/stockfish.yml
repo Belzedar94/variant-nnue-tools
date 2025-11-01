@@ -5,7 +5,7 @@ on:
       - master
       - tools
       - github_ci
-      - work
+      - codex/merge-upstream-commits-and-hard-code-nnuemaxpieces
   pull_request:
     branches:
       - master
