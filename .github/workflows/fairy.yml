@@ -5,6 +5,7 @@ on:
       - master
       - tools
       - work
+      - codex/merge-upstream-commits-and-hard-code-nnuemaxpieces-gob08g
   pull_request:
     branches:
       - master

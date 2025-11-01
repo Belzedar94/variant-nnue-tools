@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [ master, tools, work, implement-battle-of-the-kings-variant-7bhqbn, codex/fix-illegal-move-in-battlekings-engine, codex/fix-illegal-move-in-battlekings-engine-304qlc ]
+    branches: [ master, tools, work, implement-battle-of-the-kings-variant-7bhqbn, codex/fix-illegal-move-in-battlekings-engine, codex/fix-illegal-move-in-battlekings-engine-304qlc, codex/merge-upstream-commits-and-hard-code-nnuemaxpieces-gob08g ]
   pull_request:
     branches: [ master, tools, work, implement-battle-of-the-kings-variant-7bhqbn, codex/fix-illegal-move-in-battlekings-engine, codex/fix-illegal-move-in-battlekings-engine-304qlc ]
 
