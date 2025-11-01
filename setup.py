@@ -14,6 +14,18 @@ else:
 
 args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
 
+truthy = {"1", "true", "yes", "on"}
+largedata_env = os.environ.get("LARGEDATA")
+explicit_data_size = os.environ.get("DATA_SIZE")
+
+if explicit_data_size:
+    data_size = explicit_data_size
+else:
+    is_large = largedata_env is not None and largedata_env.lower() in truthy
+    data_size = "1024" if is_large else "512"
+
+args.append(f"-DDATA_SIZE={data_size}")
+
 if "64bit" in platform.architecture():
     args.append("-DIS_64BIT")
 
