@@ -2,7 +2,7 @@ name: ffishjs
 
 on:
   push:
-    branches: [ master, work ]
+    branches: [ master, work, codex/merge-specified-upstream-commits-and-hard-code-nnuemaxpieces ]
   pull_request:
     branches: [ master, work ]
 

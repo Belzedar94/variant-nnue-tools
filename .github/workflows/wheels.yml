@@ -5,6 +5,7 @@ on:
       branches:
         - master
         - work
+        - codex/merge-specified-upstream-commits-and-hard-code-nnuemaxpieces
     pull_request:
       branches:
         - master
