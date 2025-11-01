@@ -788,12 +788,11 @@ namespace {
         }
         v->stalemateValue = -VALUE_MATE;
         v->nMoveRule = 0;
-        v->nFoldRule = 2;
-        v->nFoldValue = VALUE_MATE;
+        v->nFoldRule = 0;
         v->extinctionValue = -VALUE_MATE;
         v->extinctionPieceTypes = piece_set(COMMONER);
         v->extinctionMustAppear = piece_set(COMMONER);
-     //   v->extinctionPseudoRoyal = true;
+        v->extinctionPseudoRoyal = true;
         v->extinctionFirstCaptureWins = true;
         return v;
     }
@@ -2114,17 +2113,7 @@ Variant* Variant::conclude() {
     nnueDimensions = nnueKingSquare * nnuePieceIndices;
 
     // Determine maximum piece count
-    std::istringstream ss(startFen);
-    ss >> std::noskipws;
-    unsigned char token;
-    nnueMaxPieces = 0;
-    while ((ss >> token) && !isspace(token))
-    {
-        if (pieceToChar.find(token) != std::string::npos || pieceToCharSynonyms.find(token) != std::string::npos)
-            nnueMaxPieces++;
-    }
-    if (twoBoards)
-        nnueMaxPieces *= 2;
+    nnueMaxPieces = 64;
 
     // For endgame evaluation to be applicable, no special win rules must apply.
     // Furthermore, rules significantly changing game mechanics also invalidate it.
