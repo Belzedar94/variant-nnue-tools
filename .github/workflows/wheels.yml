@@ -4,7 +4,7 @@ on:
     push:
       branches:
         - master
-        - work
+        - codex/merge-upstream-commits-and-hard-code-nnuemaxpieces
     pull_request:
       branches:
         - master
