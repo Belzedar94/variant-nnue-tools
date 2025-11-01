@@ -39,6 +39,7 @@ pyffish_module = Extension(
     "pyffish",
     sources=sources,
     depends=headers,
+    include_dirs=["src"],
     extra_compile_args=args)
 
 setup(name="pyffish", version="0.0.88",
