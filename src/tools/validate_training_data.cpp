@@ -25,10 +25,8 @@
 #include <chrono>
 #include <random>
 #include <regex>
-#include <filesystem>
 
 using namespace std;
-namespace sys = std::filesystem;
 
 namespace Stockfish::Tools
 {

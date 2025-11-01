@@ -39,11 +39,13 @@ CLASSIFIERS = [
 with io.open("README.md", "r", encoding="utf8") as fh:
     long_description = fh.read().strip()
 
+tool_sources = ["src/tools/validate_training_data.cpp"]
+
 sources = (glob("src/*.cpp")
            + glob("src/syzygy/*.cpp")
            + glob("src/nnue/*.cpp")
            + glob("src/nnue/features/*.cpp")
-           + glob("src/tools/*.cpp"))
+           + tool_sources)
 headers = (glob("src/*.h")
            + glob("src/syzygy/*.h")
            + glob("src/nnue/*.h")
