@@ -39,8 +39,16 @@ CLASSIFIERS = [
 with io.open("README.md", "r", encoding="utf8") as fh:
     long_description = fh.read().strip()
 
-sources = glob("src/*.cpp") + glob("src/syzygy/*.cpp") + glob("src/nnue/*.cpp") + glob("src/nnue/features/*.cpp")
-headers = glob("src/*.h") + glob("src/syzygy/*.h") + glob("src/nnue/*.h") + glob("src/nnue/features/*.h")
+sources = (glob("src/*.cpp")
+           + glob("src/syzygy/*.cpp")
+           + glob("src/nnue/*.cpp")
+           + glob("src/nnue/features/*.cpp")
+           + glob("src/tools/*.cpp"))
+headers = (glob("src/*.h")
+           + glob("src/syzygy/*.h")
+           + glob("src/nnue/*.h")
+           + glob("src/nnue/features/*.h")
+           + glob("src/tools/*.h"))
 ffish_source_file = os.path.normcase("src/ffishjs.cpp")
 try:
     sources.remove(ffish_source_file)
