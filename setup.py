@@ -12,7 +12,7 @@ if platform.python_compiler().startswith("MSC"):
 else:
     args = ["-std=c++17", "-flto", "-Wno-date-time"]
 
-args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
+args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF", "-DDATA_SIZE=512"])
 
 if "64bit" in platform.architecture():
     args.append("-DIS_64BIT")
@@ -39,6 +39,7 @@ pyffish_module = Extension(
     "pyffish",
     sources=sources,
     depends=headers,
+    include_dirs=["src"],
     extra_compile_args=args)
 
 setup(name="pyffish", version="0.0.88",
