@@ -1643,6 +1643,11 @@ Value Eval::evaluate(const Position& pos) {
 
          int scale = 1200; // try to avoid divergence in reinforcement learning
 
+         // Cap scale to prevent eval inflation in variants with unusual piece values
+         // or extinction rules (e.g., battlekings) where large material can cause runaway RL
+         if (pos.extinction_first_capture())
+             scale = std::min(scale, 1024);
+
          Value nnue = NNUE::evaluate(pos, true) * scale / 1024;
 
          if (pos.is_chess960())
