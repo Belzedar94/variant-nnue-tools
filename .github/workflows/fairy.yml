@@ -1,17 +1,9 @@
 name: fairy
 on:
   push:
-    branches:
-      - master
-      - tools
-      - work
-      - codex/merge-specific-commits-and-update-nnuemaxpieces
+
   pull_request:
-    branches:
-      - master
-      - tools
-      - work
-      - codex/merge-specific-commits-and-update-nnuemaxpieces
+
 jobs:
   fairy:
     name: ${{ matrix.config.name }}
