@@ -391,8 +391,10 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     const Variant* v = variants.find(variant)->second;
     std::cerr << "Writing config for variant " + variant << std::endl;
 
-    const int dataSize = (v->maxFile + 1) * (v->maxRank + 1) + v->nnueMaxPieces * 5
-                        + popcount(v->pieceTypes) * 2 * 5 + 50 > 512 ? 1024 : 512;
+      const int dataSize = (v->maxFile + 1) * (v->maxRank + 1) /* board squares */
+                          + (v->maxFile + 1) * (v->maxRank + 1) /* wall bitset */
+                          + v->nnueMaxPieces * 5
+                          + popcount(v->pieceTypes) * 2 * 5 + 50 > 512 ? 1024 : 512;
 
     if (dataSize > DATA_SIZE)
         std::cerr << std::endl << "Warning: Recommended training data size " << dataSize

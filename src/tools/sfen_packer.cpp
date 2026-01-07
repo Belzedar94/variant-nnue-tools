@@ -82,7 +82,8 @@ namespace Stockfish::Tools {
     // sfen can be packed to 256bit (32bytes) by Huffman coding.
     // This is proven by mini. The above is Huffman coding.
     //
-    // Internal format = 1-bit turn + 7-bit king position *2 + piece on board (Huffman coding) + hand piece (Huffman coding)
+    // Internal format = 1-bit turn + 7-bit king position *2 + piece on board (Huffman coding)
+    //                + wall squares (1 bit per square) + hand piece (Huffman coding)
     // Side to move (White = 0, Black = 1) (1bit)
     // White King Position (6 bits)
     // Black King Position (6 bits)
@@ -129,6 +130,7 @@ namespace Stockfish::Tools {
     // - 40 pieces           240 bits
     // - 20 pockets          100 bits
     // - 2 kings             14 bits
+    // - wall squares        80 bits
     // - castling rights     4 bits
     // - ep square           8 bits
     // - rule50              7 bits
@@ -194,6 +196,16 @@ namespace Stockfish::Tools {
                 if (pos.nnue_king() && type_of(pc) == pos.nnue_king())
                     continue;
                 write_board_piece_to_stream(pos, pc);
+            }
+        }
+
+        // Write wall squares as a bitset (1 bit per square).
+        for (Rank r = pos.max_rank(); r >= RANK_1; --r)
+        {
+            for (File f = FILE_A; f <= pos.max_file(); ++f)
+            {
+                Square sq = make_square(f, r);
+                stream.write_one_bit((pos.state()->wallSquares & sq) ? 1 : 0);
             }
         }
 
@@ -337,8 +349,22 @@ namespace Stockfish::Tools {
 
                 pos.put_piece(Piece(pc), sq);
 
-                if (stream.get_cursor()> 512)
+                if (stream.get_cursor()> DATA_SIZE)
                     return 1;
+            }
+        }
+
+        // Wall squares
+        for (Rank r = pos.max_rank(); r >= RANK_1; --r)
+        {
+            for (File f = FILE_A; f <= pos.max_file(); ++f)
+            {
+                auto sq = make_square(f, r);
+                if (stream.read_one_bit())
+                {
+                    pos.st->wallSquares |= sq;
+                    pos.byTypeBB[ALL_PIECES] |= sq;
+                }
             }
         }
 
