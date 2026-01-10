@@ -393,7 +393,7 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     std::cerr << "Writing config for variant " + variant << std::endl;
 
       const int dataSize = (v->maxFile + 1) * (v->maxRank + 1) /* board squares */
-                          + (v->maxFile + 1) * (v->maxRank + 1) /* wall bitset */
+                          + (nnueHasWalls ? (v->maxFile + 1) * (v->maxRank + 1) : 0) /* wall bitset */
                           + v->nnueMaxPieces * 5
                           + popcount(v->pieceTypes) * 2 * 5 + 50 > 512 ? 1024 : 512;
 

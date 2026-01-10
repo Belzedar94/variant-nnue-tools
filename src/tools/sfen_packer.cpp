@@ -199,13 +199,16 @@ namespace Stockfish::Tools {
             }
         }
 
-        // Write wall squares as a bitset (1 bit per square).
-        for (Rank r = pos.max_rank(); r >= RANK_1; --r)
+        if (pos.nnue_wall_index_base() >= 0)
         {
-            for (File f = FILE_A; f <= pos.max_file(); ++f)
+            // Write wall squares as a bitset (1 bit per square).
+            for (Rank r = pos.max_rank(); r >= RANK_1; --r)
             {
-                Square sq = make_square(f, r);
-                stream.write_one_bit((pos.state()->wallSquares & sq) ? 1 : 0);
+                for (File f = FILE_A; f <= pos.max_file(); ++f)
+                {
+                    Square sq = make_square(f, r);
+                    stream.write_one_bit((pos.state()->wallSquares & sq) ? 1 : 0);
+                }
             }
         }
 
@@ -354,16 +357,19 @@ namespace Stockfish::Tools {
             }
         }
 
-        // Wall squares
-        for (Rank r = pos.max_rank(); r >= RANK_1; --r)
+        if (pos.nnue_wall_index_base() >= 0)
         {
-            for (File f = FILE_A; f <= pos.max_file(); ++f)
+            // Wall squares
+            for (Rank r = pos.max_rank(); r >= RANK_1; --r)
             {
-                auto sq = make_square(f, r);
-                if (stream.read_one_bit())
+                for (File f = FILE_A; f <= pos.max_file(); ++f)
                 {
-                    pos.st->wallSquares |= sq;
-                    pos.byTypeBB[ALL_PIECES] |= sq;
+                    auto sq = make_square(f, r);
+                    if (stream.read_one_bit())
+                    {
+                        pos.st->wallSquares |= sq;
+                        pos.byTypeBB[ALL_PIECES] |= sq;
+                    }
                 }
             }
         }
