@@ -315,13 +315,8 @@ namespace Stockfish::Tools
                 const int depth = params.search_depth_min + (int)prng.rand(params.search_depth_max - params.search_depth_min + 1);
 
                 // Starting search calls init_for_search
-                Value eval_value = VALUE_ZERO;
-                Value qsearch_value = VALUE_ZERO;
-                if (params.eval_diff_limit >= 0)
-                {
-                    eval_value = Search::search(pos, pos.checkers() || pos.is_immediate_game_end() ? 0 : -1).first;
-                    qsearch_value = Search::search(pos, 0).first;
-                }
+                Value eval_value = Search::search(pos, pos.checkers() || pos.is_immediate_game_end() ? 0 : -1).first;
+                Value qsearch_value = Search::search(pos, 0).first;
                 auto [search_value, search_pv] = Search::search(pos, depth, 1, params.nodes);
 
                 // This has to be performed after search because it needs to know
