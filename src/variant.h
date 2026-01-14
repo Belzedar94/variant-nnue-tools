@@ -186,6 +186,8 @@ struct Variant {
   int pieceIndex[PIECE_TYPE_NB];
   int nnueDimensions;
   bool nnueUsePockets;
+  int nnuePotionZoneIndexBase = -1;
+  int nnuePotionCooldownIndexBase = -1;
   int pieceSquareIndex[COLOR_NB][PIECE_NB];
   int pieceHandIndex[COLOR_NB][PIECE_NB];
   int kingSquareIndex[SQUARE_NB];

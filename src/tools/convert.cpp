@@ -500,6 +500,213 @@ namespace Stockfish::Tools
         std::cout << "all done" << std::endl;
     }
 
+    struct PlainEntry {
+        std::string fen;
+        std::string move;
+        int score = 0;
+        int ply = 0;
+        int result = 0;
+        bool has_fen = false;
+        bool has_move = false;
+        bool has_score = false;
+        bool has_ply = false;
+        bool has_result = false;
+        void reset() {
+            fen.clear();
+            move.clear();
+            score = 0;
+            ply = 0;
+            result = 0;
+            has_fen = has_move = has_score = has_ply = has_result = false;
+        }
+    };
+
+    static inline std::string trim_left(std::string value)
+    {
+        const auto first = value.find_first_not_of(" \t");
+        if (first == std::string::npos)
+            return "";
+        value.erase(0, first);
+        return value;
+    }
+
+    static bool binpack_supported_variant(const Variant* v)
+    {
+        if (!v)
+            return false;
+        if (v->maxFile != FILE_H || v->maxRank != RANK_8)
+            return false;
+        if (v->pieceTypes != CHESS_PIECES)
+            return false;
+        if (v->pieceDrops || v->seirawanGating || v->gating || v->potions)
+            return false;
+        if (v->capturesToHand || v->twoBoards || v->wallingRule)
+            return false;
+        return true;
+    }
+
+    static bool use_engine_plain_converter()
+    {
+        auto it = variants.find(Options["UCI_Variant"]);
+        if (it == variants.end())
+            return true;
+        return !binpack_supported_variant(it->second);
+    }
+
+    static void convert_bin_to_plain_engine(std::string inputPath, std::string outputPath,
+                                            std::ios_base::openmode om, bool validate)
+    {
+        std::cout << "Converting " << inputPath << " to " << outputPath
+                  << " (engine format)\n";
+
+        std::ifstream inputFile(inputPath, std::ios_base::binary);
+        if (!inputFile)
+        {
+            std::cerr << "Input file does not exist.\n";
+            return;
+        }
+
+        std::ofstream outputFile(outputPath, om);
+        if (!outputFile)
+        {
+            std::cerr << "Output file could not be opened.\n";
+            return;
+        }
+
+        Position tpos;
+        StateInfo si;
+        auto th = Threads.main();
+        PackedSfenValue psv;
+        std::size_t numProcessedPositions = 0;
+
+        while (inputFile.read(reinterpret_cast<char*>(&psv), sizeof(psv)))
+        {
+            tpos.set_from_packed_sfen(psv.sfen, &si, th);
+            Move m = Move(psv.move);
+            if (validate && !tpos.legal(m))
+            {
+                std::cerr << "Illegal move " << UCI::move(tpos, m)
+                          << " for position " << tpos.fen() << '\n';
+                return;
+            }
+
+            outputFile << "fen " << tpos.fen() << '\n';
+            outputFile << "move " << UCI::move(tpos, m) << '\n';
+            outputFile << "score " << psv.score << '\n';
+            outputFile << "ply " << int(psv.gamePly) << '\n';
+            outputFile << "result " << int(psv.game_result) << '\n';
+            outputFile << "e\n";
+            ++numProcessedPositions;
+        }
+
+        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
+    }
+
+    static void convert_plain_to_bin_engine(std::string inputPath, std::string outputPath,
+                                            std::ios_base::openmode om, bool validate)
+    {
+        std::cout << "Converting " << inputPath << " to " << outputPath
+                  << " (engine format)\n";
+
+        std::ifstream inputFile(inputPath);
+        if (!inputFile)
+        {
+            std::cerr << "Input file does not exist.\n";
+            return;
+        }
+
+        std::ofstream outputFile(outputPath, std::ios_base::binary | om);
+        if (!outputFile)
+        {
+            std::cerr << "Output file could not be opened.\n";
+            return;
+        }
+
+        auto it = variants.find(Options["UCI_Variant"]);
+        const Variant* v = it == variants.end() ? nullptr : it->second;
+        Position pos;
+        StateInfo si;
+        auto th = Threads.main();
+
+        PlainEntry entry;
+        std::size_t numProcessedPositions = 0;
+        std::string key;
+        std::string value;
+
+        auto flush_entry = [&]() -> bool {
+            if (!entry.has_fen)
+                return true;
+
+            pos.set(v, entry.fen, false, &si, th);
+            std::string moveStr = entry.move;
+            Move m = UCI::to_move(pos, moveStr);
+            if (validate && (m == MOVE_NONE || !pos.legal(m)))
+            {
+                std::cerr << "Illegal move " << entry.move
+                          << " for position " << entry.fen << '\n';
+                return false;
+            }
+
+            PackedSfenValue psv{};
+            pos.sfen_pack(psv.sfen);
+            psv.score = static_cast<std::int16_t>(entry.score);
+            psv.move = static_cast<std::uint32_t>(m);
+            psv.gamePly = static_cast<std::uint16_t>(entry.ply);
+            psv.game_result = static_cast<std::int8_t>(entry.result);
+            psv.padding = 0;
+
+            outputFile.write(reinterpret_cast<const char*>(&psv), sizeof(psv));
+            ++numProcessedPositions;
+            entry.reset();
+            return true;
+        };
+
+        while (inputFile >> key)
+        {
+            if (key == "e")
+            {
+                if (!flush_entry())
+                    return;
+                continue;
+            }
+
+            inputFile >> std::ws;
+            std::getline(inputFile, value, '\n');
+            value = trim_left(value);
+
+            if (key == "fen")
+            {
+                entry.fen = value;
+                entry.has_fen = true;
+            }
+            else if (key == "move")
+            {
+                entry.move = value;
+                entry.has_move = true;
+            }
+            else if (key == "score")
+            {
+                entry.score = std::stoi(value);
+                entry.has_score = true;
+            }
+            else if (key == "ply")
+            {
+                entry.ply = std::stoi(value);
+                entry.has_ply = true;
+            }
+            else if (key == "result")
+            {
+                entry.result = std::stoi(value);
+                entry.has_result = true;
+            }
+        }
+
+        if (entry.has_fen)
+            flush_entry();
+
+        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
+    }
+
     static inline const std::string plain_extension = ".plain";
     static inline const std::string bin_extension = ".bin";
     static inline const std::string binpack_extension = ".binpack";
@@ -532,12 +739,12 @@ namespace Stockfish::Tools
     static ConvertFunctionType* get_convert_function(const std::string& input_path, const std::string& output_path)
     {
         if (is_convert_of_type(input_path, output_path, plain_extension, bin_extension))
-            return binpack::convertPlainToBin;
+            return use_engine_plain_converter() ? convert_plain_to_bin_engine : binpack::convertPlainToBin;
         if (is_convert_of_type(input_path, output_path, plain_extension, binpack_extension))
             return binpack::convertPlainToBinpack;
 
         if (is_convert_of_type(input_path, output_path, bin_extension, plain_extension))
-            return binpack::convertBinToPlain;
+            return use_engine_plain_converter() ? convert_bin_to_plain_engine : binpack::convertBinToPlain;
         if (is_convert_of_type(input_path, output_path, bin_extension, binpack_extension))
             return binpack::convertBinToBinpack;
 

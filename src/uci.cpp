@@ -391,8 +391,9 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     std::cerr << "Writing config for variant " + variant << std::endl;
 
     const int nnuePieceTypes = popcount(v->pieceTypes) - (v->nnueKing != NO_PIECE_TYPE ? 1 : 0);
+    const int potionBits = v->potions ? COLOR_NB * Variant::POTION_TYPE_NB * (1 + 7 + POTION_COOLDOWN_BITS) : 0;
     const int dataSize = (v->maxFile + 1) * (v->maxRank + 1) + v->nnueMaxPieces * 5
-                        + nnuePieceTypes * 2 * 5 + 50 > 512 ? 1024 : 512;
+                        + nnuePieceTypes * 2 * 5 + 50 + potionBits > 512 ? 1024 : 512;
 
     if (dataSize > DATA_SIZE)
         std::cerr << std::endl << "Warning: Recommended training data size " << dataSize
@@ -410,7 +411,8 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     << "#define PIECE_COUNT " << v->nnueMaxPieces << std::endl
     << "#define POCKETS " << (v->nnueUsePockets ? "true" : "false") << std::endl
     << "#define KING_SQUARES " << v->nnueKingSquare << std::endl
-    << "#define DATA_SIZE " << DATA_SIZE << std::endl;
+    << "#define DATA_SIZE " << DATA_SIZE << std::endl
+    << "#define HAS_POTIONS " << (v->potions ? "true" : "false") << std::endl;
 
     if (out1.is_open()) {
         out1.close();
@@ -427,8 +429,9 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     << "KING_SQUARES = " << v->nnueKingSquare << std::endl
     << "PIECE_TYPES = " << nnuePieceTypes << std::endl
     << "PIECES = 2 * PIECE_TYPES" << std::endl
-    << "USE_POCKETS = " << (v->nnueUsePockets ? "True" : "False") << std::endl
+    << "USE_POCKETS = " << (v->nnueUsePockets ? "True" : "False") << std::endl  
     << "POCKETS = 2 * FILES if USE_POCKETS else 0" << std::endl
+    << "HAS_POTIONS = " << (v->potions ? "True" : "False") << std::endl
     << std::endl
     << "PIECE_VALUES = {" << std::endl;
     for (PieceSet ps = v->pieceTypes; ps;)
