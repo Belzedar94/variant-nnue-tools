@@ -7,6 +7,7 @@
 
 #include "uci.h"
 
+#include <algorithm>
 #include <sstream>
 #include <fstream>
 #include <cstring> // std::memset()
@@ -197,6 +198,14 @@ namespace Stockfish::Tools {
             }
         }
 
+        if (pos.points_score_enabled())
+            for (auto c : Colors)
+                stream.write_n_bit(std::max(0, std::min(pos.points_score(c), POINTS_SCORE_MAX)), POINTS_SCORE_BITS);
+
+        if (pos.check_counting())
+            for (auto c : Colors)
+                stream.write_n_bit(std::max(0, std::min(int(pos.checks_remaining(c)), CHECKS_MAX)), CHECKS_BITS);
+
         for(auto c: Colors)
             for (PieceSet ps = pos.piece_types(); ps;)
                 stream.write_n_bit(pos.count_in_hand(c, pop_lsb(ps)), DATA_SIZE > 512 ? 7 : 5);
@@ -341,6 +350,14 @@ namespace Stockfish::Tools {
                     return 1;
             }
         }
+
+        if (pos.points_score_enabled())
+            for (auto c : Colors)
+                pos.st->pointsScore[c] = stream.read_n_bit(POINTS_SCORE_BITS);
+
+        if (pos.check_counting())
+            for (auto c : Colors)
+                pos.st->checksRemaining[c] = CheckCount(stream.read_n_bit(CHECKS_BITS));
 
         // Hand pieces - read the counts for each color and piece type
         for(auto c: Colors)

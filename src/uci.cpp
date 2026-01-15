@@ -389,10 +389,15 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     }
 
     const Variant* v = variants.find(variant)->second;
+    const bool nnueHasPoints = v->pointsScoreEnabled;
+    const bool nnueHasChecks = v->checkCounting;
     std::cerr << "Writing config for variant " + variant << std::endl;
 
     const int dataSize = (v->maxFile + 1) * (v->maxRank + 1) + v->nnueMaxPieces * 5
-                        + popcount(v->pieceTypes) * 2 * 5 + 50 > 512 ? 1024 : 512;
+                        + popcount(v->pieceTypes) * 2 * 5
+                        + (nnueHasPoints ? 2 * POINTS_SCORE_BITS : 0)
+                        + (nnueHasChecks ? 2 * CHECKS_BITS : 0)
+                        + 50 > 512 ? 1024 : 512;
 
     if (dataSize > DATA_SIZE)
         std::cerr << std::endl << "Warning: Recommended training data size " << dataSize
@@ -409,6 +414,10 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     << "#define PIECE_TYPES " << popcount(v->pieceTypes) << std::endl
     << "#define PIECE_COUNT " << v->nnueMaxPieces << std::endl
     << "#define POCKETS " << (v->nnueUsePockets ? "true" : "false") << std::endl
+    << "#define HAS_POINTS " << (nnueHasPoints ? "true" : "false") << std::endl
+    << "#define HAS_CHECKS " << (nnueHasChecks ? "true" : "false") << std::endl
+    << "#define POINTS_SCORE_BITS " << POINTS_SCORE_BITS << std::endl
+    << "#define CHECKS_BITS " << CHECKS_BITS << std::endl
     << "#define KING_SQUARES " << v->nnueKingSquare << std::endl
     << "#define DATA_SIZE " << DATA_SIZE << std::endl;
 
@@ -427,8 +436,12 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     << "KING_SQUARES = " << v->nnueKingSquare << std::endl
     << "PIECE_TYPES = " << popcount(v->pieceTypes) << std::endl
     << "PIECES = 2 * PIECE_TYPES" << std::endl
-    << "USE_POCKETS = " << (v->nnueUsePockets ? "True" : "False") << std::endl
+    << "USE_POCKETS = " << (v->nnueUsePockets ? "True" : "False") << std::endl  
     << "POCKETS = 2 * FILES if USE_POCKETS else 0" << std::endl
+    << "HAS_POINTS = " << (nnueHasPoints ? "True" : "False") << std::endl
+    << "HAS_CHECKS = " << (nnueHasChecks ? "True" : "False") << std::endl
+    << "POINTS_SCORE_BITS = " << POINTS_SCORE_BITS << std::endl
+    << "CHECKS_BITS = " << CHECKS_BITS << std::endl
     << std::endl
     << "PIECE_VALUES = {" << std::endl;
     for (PieceSet ps = v->pieceTypes; ps;)
