@@ -49,6 +49,7 @@ namespace Zobrist {
   Key side, noPawns;
   Key inHand[PIECE_NB][SQUARE_NB];
   Key checks[COLOR_NB][CHECKS_NB];
+  Key points[COLOR_NB][POINTS_SCORE_MAX + 1];
   Key wall[SQUARE_NB];
   Key endgame[EG_EVAL_NB];
 }
@@ -175,6 +176,10 @@ void Position::init() {
   for (Color c : {WHITE, BLACK})
       for (int n = 0; n < CHECKS_NB; ++n)
           Zobrist::checks[c][n] = rng.rand<Key>();
+
+  for (Color c : {WHITE, BLACK})
+      for (int n = 0; n <= POINTS_SCORE_MAX; ++n)
+          Zobrist::points[c][n] = rng.rand<Key>();
 
   for (Color c : {WHITE, BLACK})
       for (PieceType pt = PAWN; pt <= KING; ++pt)
@@ -485,6 +490,33 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
   else
       ss.putback(token);
 
+  bool pointsParsed = false;
+  std::string pointsToken;
+  if (!sfen && points_score_enabled())
+  {
+      ss >> std::skipws;
+      if (ss >> pointsToken)
+      {
+          size_t plusPos = pointsToken.find('+');
+          if (plusPos != std::string::npos && plusPos > 0 && plusPos + 1 < pointsToken.size())
+          {
+              bool valid = true;
+              for (size_t i = 0; i < pointsToken.size(); ++i)
+                  if (i != plusPos && !isdigit(pointsToken[i]))
+                  {
+                      valid = false;
+                      break;
+                  }
+              if (valid)
+              {
+                  st->pointsScore[WHITE] = std::stoi(pointsToken.substr(0, plusPos));
+                  st->pointsScore[BLACK] = std::stoi(pointsToken.substr(plusPos + 1));
+                  pointsParsed = true;
+              }
+          }
+      }
+  }
+
   // 5-6. Halfmove clock and fullmove number
   if (sfen)
   {
@@ -513,7 +545,15 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
   }
   else
   {
-      ss >> std::skipws >> st->rule50 >> gamePly;
+      if (pointsParsed)
+          ss >> std::skipws >> st->rule50 >> gamePly;
+      else if (!pointsToken.empty())
+      {
+          st->rule50 = std::stoi(pointsToken);
+          ss >> std::skipws >> gamePly;
+      }
+      else
+          ss >> std::skipws >> st->rule50 >> gamePly;
 
       // Convert from fullmove starting from 1 to gamePly starting from 0,
       // handle also common incorrect FEN with fullmove = 0.
@@ -667,6 +707,13 @@ void Position::set_state(StateInfo* si) const {
   if (check_counting())
       for (Color c : {WHITE, BLACK})
           si->key ^= Zobrist::checks[c][si->checksRemaining[c]];
+
+  if (points_score_enabled())
+      for (Color c : {WHITE, BLACK})
+      {
+          int clamped = std::max(0, std::min(si->pointsScore[c], POINTS_SCORE_MAX));
+          si->key ^= Zobrist::points[c][clamped];
+      }
 }
 
 
@@ -825,6 +872,10 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
   // Check count
   if (check_counting())
       ss << st->checksRemaining[WHITE] << "+" << st->checksRemaining[BLACK] << " ";
+
+  // Points score
+  if (points_score_enabled())
+      ss << st->pointsScore[WHITE] << "+" << st->pointsScore[BLACK] << " ";
 
   // Counting ply or 50-move rule counter
   if (st->countingLimit)
@@ -1585,15 +1636,36 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       captured = NO_PIECE;
   }
   st->capturedpromoted = is_promoted(to);
-  st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;
+  st->unpromotedCapturedPiece = captured ? unpromoted_piece_on(to) : NO_PIECE;  
   st->pass = is_pass(m);
 
   assert(color_of(pc) == us);
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
   assert(type_of(captured) != KING);
 
+  auto add_points_score = [&](Color scorer, int delta) {
+      if (!points_score_enabled() || delta == 0)
+          return;
+      int oldClamped = points_score_clamped(scorer);
+      st->pointsScore[scorer] += delta;
+      int newClamped = points_score_clamped(scorer);
+      if (oldClamped != newClamped)
+          k ^= Zobrist::points[scorer][oldClamped] ^ Zobrist::points[scorer][newClamped];
+  };
+  auto scored_capture_piece = [&](Piece pc, Square sq) {
+      if (!captures_to_hand() || drop_loop() || !is_promoted(sq))
+          return pc;
+      Piece unpromotedCaptured = unpromoted_piece_on(sq);
+      return unpromotedCaptured != NO_PIECE
+             ? unpromotedCaptured
+             : make_piece(color_of(pc), main_promotion_pawn_type(color_of(pc)));
+  };
+
   if (check_counting() && givesCheck)
       k ^= Zobrist::checks[us][st->checksRemaining[us]] ^ Zobrist::checks[us][--(st->checksRemaining[us])];
+
+  if (var->pointsCheckValue && givesCheck)
+      add_points_score(us, var->pointsCheckValue);
 
   if (type_of(m) == CASTLING)
   {
@@ -1637,6 +1709,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
 
       // Update board and piece lists
+      if (var->pointsCountCaptures && color_of(captured) == them)
+      {
+          Piece scoredPiece = scored_capture_piece(captured, capsq);
+          add_points_score(us, var->pointsCaptureValue[type_of(scoredPiece)]);
+      }
       bool capturedPromoted = is_promoted(capsq);
       Piece unpromotedCaptured = unpromoted_piece_on(capsq);
       remove_piece(capsq);
@@ -2026,6 +2103,11 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               st->demotedBycatch |= bsq;
           else if (capturedPromoted)
               st->promotedBycatch |= bsq;
+          if (var->pointsCountCaptures && bc == them)
+          {
+              Piece scoredPiece = scored_capture_piece(bpc, bsq);
+              add_points_score(us, var->pointsCaptureValue[type_of(scoredPiece)]);
+          }
           remove_piece(bsq);
           board[bsq] = NO_PIECE;
           if (captures_to_hand())
@@ -2640,7 +2722,7 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
       }
       if (st->rule50 - offset > (2 * n_move_rule() - 1))
       {
-          result = var->materialCounting ? convert_mate_value(material_counting_result(), ply) : VALUE_DRAW;
+          result = points_adjudicate_draw() ? convert_mate_value(points_counting_result(), ply) : VALUE_DRAW;
           return true;
       }
   }
@@ -2705,8 +2787,8 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
                                               : (chaseThem || chaseUs) ? (!chaseUs ? VALUE_MATE : !chaseThem ? -VALUE_MATE : VALUE_DRAW)
                                               : var->nFoldValueAbsolute && sideToMove == BLACK ? -var->nFoldValue
                                               : var->nFoldValue, ply);
-                  if (result == VALUE_DRAW && var->materialCounting)
-                      result = convert_mate_value(material_counting_result(), ply);
+                  if (result == VALUE_DRAW && points_adjudicate_draw())
+                      result = convert_mate_value(points_counting_result(), ply);
                   return true;
               }
 
@@ -2841,6 +2923,22 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
       return true;
   }
 
+  // Points win threshold
+  if (var->pointsWin > 0)
+  {
+      int diff = points_total(WHITE) - points_total(BLACK);
+      if (diff >= var->pointsWin)
+      {
+          result = sideToMove == WHITE ? mate_in(ply) : mated_in(ply);
+          return true;
+      }
+      if (-diff >= var->pointsWin)
+      {
+          result = sideToMove == BLACK ? mate_in(ply) : mated_in(ply);
+          return true;
+      }
+  }
+
   //Calculate eligible pieces for connection once.
   Bitboard connectPieces = 0;
   for (PieceSet ps = connect_piece_types(); ps;){
@@ -2939,7 +3037,7 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
   if (   (st->pliesFromNull > 0 && ((st->bikjang && st->previous->bikjang) || ((st->pass && st->previous->pass)&&!var->wallOrMove)))
       || (var->adjudicateFullBoard && !(~pieces() & board_bb())))
   {
-      result = var->materialCounting ? convert_mate_value(material_counting_result(), ply) : VALUE_DRAW;
+      result = points_adjudicate_draw() ? convert_mate_value(points_counting_result(), ply) : VALUE_DRAW;
       return true;
   }
 
@@ -3115,7 +3213,7 @@ bool Position::has_game_cycle(int ply) const {
 
   int end = captures_to_hand() ? st->pliesFromNull : std::min(st->rule50, st->pliesFromNull);
 
-  if (end < 3 || var->nFoldValue != VALUE_DRAW || var->perpetualCheckIllegal || var->materialCounting || var->moveRepetitionIllegal || walling_rule() == DUCK)
+  if (end < 3 || var->nFoldValue != VALUE_DRAW || var->perpetualCheckIllegal || points_adjudicate_draw() || var->moveRepetitionIllegal || walling_rule() == DUCK)
     return false;
 
   Key originalKey = st->key;
