@@ -11,7 +11,9 @@ namespace Stockfish::Tools {
     // packed sfen
     struct PackedSfen { std::uint8_t data[DATA_SIZE / 8]; };
 
-    #if defined(LARGEBOARDS)
+    #if defined(VERY_LARGE_BOARDS)
+    using PackedMove = std::uint64_t;
+    #elif defined(LARGEBOARDS)
     using PackedMove = std::uint32_t;
     #else
     using PackedMove = std::uint16_t;
