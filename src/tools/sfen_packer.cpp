@@ -10,6 +10,7 @@
 #include <sstream>
 #include <fstream>
 #include <cstring> // std::memset()
+#include <bitset>
 
 using namespace std;
 
@@ -103,6 +104,10 @@ namespace Stockfish::Tools {
         uint8_t *data; // uint8_t[32];
 
         BitStream stream;
+        bool use_wide = false;
+        int square_bits = 0;
+        int piece_bits = 0;
+        int pocket_bits = 0;
 
         // Output the board pieces to stream.
         void write_board_piece_to_stream(const Position& pos, Piece pc);
@@ -162,6 +167,46 @@ namespace Stockfish::Tools {
         {0b11111,5}, //
     };
 
+    constexpr int bits_needed(unsigned int value) {
+        int bits = 0;
+        while ((1u << bits) <= value && bits < 31)
+            ++bits;
+        return bits ? bits : 1;
+    }
+
+    inline int square_count(const Position& pos) {
+        return pos.files() * pos.ranks();
+    }
+
+    inline int piece_type_count(const Position& pos) {
+        return static_cast<int>(std::bitset<64>(pos.piece_types()).count());
+    }
+
+    inline bool use_wide_sfen(const Position& pos) {
+        return square_count(pos) > 128 || piece_type_count(pos) > 16;
+    }
+
+    inline int square_bits_for(const Position& pos) {
+        return bits_needed(static_cast<unsigned int>(square_count(pos) - 1));
+    }
+
+    inline int piece_bits_for(const Position& pos) {
+        return bits_needed(static_cast<unsigned int>(2 * piece_type_count(pos)));
+    }
+
+    inline int pocket_bits_for(const Position& pos) {
+        return use_wide_sfen(pos) ? bits_needed(static_cast<unsigned int>(pos.variant()->nnueMaxPieces))
+                                  : (DATA_SIZE > 512 ? 7 : 5);
+    }
+
+    inline int king_bits_for(const Position& pos) {
+        return use_wide_sfen(pos) ? square_bits_for(pos) : 7;
+    }
+
+    inline int ep_bits_for(const Position& pos) {
+        return use_wide_sfen(pos) ? square_bits_for(pos) : 7;
+    }
+
     inline Square to_variant_square(Square s, const Position& pos) {
         return Square(s - rank_of(s) * (FILE_MAX - pos.max_file()));
     }
@@ -173,8 +218,14 @@ namespace Stockfish::Tools {
     // Pack sfen and store in data[64].
     void SfenPacker::pack(const Position& pos)
     {
-        memset(data, 0, DATA_SIZE / 8 /* 512bit */);
+        memset(data, 0, DATA_SIZE / 8 /* DATA_SIZE bits */);
         stream.set_data(data);
+        use_wide = use_wide_sfen(pos);
+        square_bits = square_bits_for(pos);
+        piece_bits = piece_bits_for(pos);
+        pocket_bits = pocket_bits_for(pos);
+        const int king_bits = king_bits_for(pos);
+        const int ep_bits = ep_bits_for(pos);
 
         // turn
         // Side to move.
@@ -183,7 +234,8 @@ namespace Stockfish::Tools {
         // 7-bit positions for leading and trailing balls
         // White king and black king, 6 bits for each.
         for(auto c: Colors)
-            stream.write_n_bit(pos.nnue_king() ? to_variant_square(pos.king_square(c), pos) : (pos.max_file() + 1) * (pos.max_rank() + 1), 7);
+            stream.write_n_bit(pos.nnue_king() ? to_variant_square(pos.king_square(c), pos)
+                                               : (pos.max_file() + 1) * (pos.max_rank() + 1), king_bits);
 
         // Write the pieces on the board other than the kings.
         for (Rank r = pos.max_rank(); r >= RANK_1; --r)
@@ -199,7 +251,7 @@ namespace Stockfish::Tools {
 
         for(auto c: Colors)
             for (PieceSet ps = pos.piece_types(); ps;)
-                stream.write_n_bit(pos.count_in_hand(c, pop_lsb(ps)), DATA_SIZE > 512 ? 7 : 5);
+                stream.write_n_bit(pos.count_in_hand(c, pop_lsb(ps)), pocket_bits);
 
         // TODO(someone): Support chess960.
         stream.write_one_bit(pos.can_castle(WHITE_OO));
@@ -213,7 +265,7 @@ namespace Stockfish::Tools {
         else {
             stream.write_one_bit(1);
             // Additional ep squares (e.g., for berolina) are not encoded
-            stream.write_n_bit(static_cast<int>(to_variant_square(lsb(pos.ep_squares()), pos)), 7);
+            stream.write_n_bit(static_cast<int>(to_variant_square(lsb(pos.ep_squares()), pos)), ep_bits);
         }
 
         stream.write_n_bit(pos.state()->rule50, 6);
@@ -237,6 +289,18 @@ namespace Stockfish::Tools {
     // Output the board pieces to stream.
     void SfenPacker::write_board_piece_to_stream(const Position& pos, Piece pc)
     {
+        if (use_wide)
+        {
+            int code = 0;
+            if (pc != NO_PIECE)
+            {
+                int idx = pos.variant()->pieceIndex[type_of(pc)];
+                code = 1 + idx * 2 + (color_of(pc) == BLACK);
+            }
+            stream.write_n_bit(code, piece_bits);
+            return;
+        }
+
         // piece type
         PieceType pr = PieceType(pc == NO_PIECE ? NO_PIECE_TYPE : pos.variant()->pieceIndex[type_of(pc)] + 1);
         auto c = huffman_table[pr];
@@ -252,6 +316,24 @@ namespace Stockfish::Tools {
     // Read one board piece from stream
     Piece SfenPacker::read_board_piece_from_stream(const Position& pos)
     {
+        if (use_wide)
+        {
+            int code = stream.read_n_bit(piece_bits);
+            if (code == 0)
+                return NO_PIECE;
+
+            Color c = (code - 1) & 1 ? BLACK : WHITE;
+            int idx = (code - 1) >> 1;
+            for (PieceSet ps = pos.piece_types(); ps;)
+            {
+                PieceType pt = pop_lsb(ps);
+                if (pos.variant()->pieceIndex[pt] == idx)
+                    return make_piece(c, pt);
+            }
+            assert(false);
+            return NO_PIECE;
+        }
+
         PieceType pr = NO_PIECE_TYPE;
         int code = 0, bits = 0;
         while (true)
@@ -298,6 +380,12 @@ namespace Stockfish::Tools {
         si->accumulator.computed[BLACK] = false;
         pos.st = si;
         pos.var = variants.find(Options["UCI_Variant"])->second;
+        packer.use_wide = use_wide_sfen(pos);
+        packer.square_bits = square_bits_for(pos);
+        packer.piece_bits = piece_bits_for(pos);
+        packer.pocket_bits = pocket_bits_for(pos);
+        const int king_bits = king_bits_for(pos);
+        const int ep_bits = ep_bits_for(pos);
 
         // Active color
         pos.sideToMove = (Color)stream.read_one_bit();
@@ -305,7 +393,7 @@ namespace Stockfish::Tools {
         // First the position of the ball
         for (auto c : Colors)
         {
-            Square king_sq = from_variant_square(Square(stream.read_n_bit(7)), pos);
+            Square king_sq = from_variant_square(Square(stream.read_n_bit(king_bits)), pos);
             if (pos.nnue_king())
                 pos.board[king_sq] = make_piece(c, pos.nnue_king());
         }
@@ -337,7 +425,7 @@ namespace Stockfish::Tools {
 
                 pos.put_piece(Piece(pc), sq);
 
-                if (stream.get_cursor()> 512)
+                if (stream.get_cursor() > DATA_SIZE)
                     return 1;
             }
         }
@@ -347,7 +435,7 @@ namespace Stockfish::Tools {
             for (PieceSet ps = pos.piece_types(); ps;)
             {
                 PieceType pt = pop_lsb(ps);
-                int count = stream.read_n_bit(DATA_SIZE > 512 ? 7 : 5);
+                int count = stream.read_n_bit(packer.pocket_bits);
                 for (int i = 0; i < count; ++i)
                     pos.add_to_hand(make_piece(c, pt));
             }
@@ -378,7 +466,7 @@ namespace Stockfish::Tools {
 
         // En passant square.
         if (stream.read_one_bit()) {
-            Square ep_square = static_cast<Square>(stream.read_n_bit(7));
+            Square ep_square = static_cast<Square>(stream.read_n_bit(ep_bits));
             pos.st->epSquares = square_bb(ep_square);
         }
         else {

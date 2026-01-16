@@ -4,10 +4,18 @@
 #include <vector>
 #include <cstdint>
 
+#include "types.h"
+
 namespace Stockfish::Tools {
 
     // packed sfen
     struct PackedSfen { std::uint8_t data[DATA_SIZE / 8]; };
+
+    #if defined(LARGEBOARDS)
+    using PackedMove = std::uint32_t;
+    #else
+    using PackedMove = std::uint16_t;
+    #endif
 
     // Structure in which PackedSfen and evaluation value are integrated
     // If you write different contents for each option, it will be a problem when reusing the teacher game
@@ -17,12 +25,12 @@ namespace Stockfish::Tools {
         // phase
         PackedSfen sfen;
 
-        // Evaluation value returned from Tools::search()
-        std::int16_t score;
-
         // PV first move
         // Used when finding the match rate with the teacher
-        std::uint16_t move;
+        PackedMove move;
+
+        // Evaluation value returned from Tools::search()
+        std::int16_t score;
 
         // Trouble of the phase from the initial phase.
         std::uint16_t gamePly;
@@ -37,7 +45,7 @@ namespace Stockfish::Tools {
         //Because this structure size is not fixed, pad it so that it is 72 bytes in any environment.
         std::uint8_t padding;
 
-        // 64 + 2 + 2 + 2 + 1 + 1 = 72bytes
+        // DATA_SIZE / 8 + sizeof(score) + sizeof(move) + sizeof(gamePly) + 2 = bytes
     };
 
     // Phase array: PSVector stands for packed sfen vector.
