@@ -83,7 +83,20 @@ namespace {
     return d > 14 ? 73 : 6 * d * d + 229 * d - 215;
   }
 
-  // Add a small random component to draw evaluations to avoid 3-fold blindness
+  bool is_potion_gating_move(const Position& pos, Move m) {
+
+    if (!pos.potions_enabled() || !is_gating(m))
+        return false;
+
+    PieceType gatingPiece = gating_type(m);
+    for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+        if (pos.potion_piece(static_cast<Variant::PotionType>(idx)) == gatingPiece)
+            return true;
+
+    return false;
+  }
+
+  // Add a small random component to draw evaluations to avoid 3-fold blindness 
   Value value_draw(Thread* thisThread) {
     return VALUE_DRAW + Value(2 * (thisThread->nodes & 1) - 1);
   }
@@ -1134,6 +1147,8 @@ moves_loop: // When in check, search starts from here
 
       // Calculate new depth for this move
       newDepth = depth - 1;
+      if (is_potion_gating_move(pos, move) && depth >= 3)
+          newDepth = std::max(newDepth - (givesCheck || captureOrPromotion ? 1 : 2), 0);
 
       // Step 13. Pruning at shallow depth (~200 Elo)
       if (  !rootNode

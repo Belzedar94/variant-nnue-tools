@@ -40,7 +40,7 @@ namespace {
 
   // partial_insertion_sort() sorts moves in descending order up to and including
   // a given limit. The order of moves smaller than the limit is left unspecified.
-  void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+  void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {        
 
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
         if (p->value >= limit)
@@ -53,6 +53,7 @@ namespace {
         }
   }
 
+  constexpr int PotionPenalty = 1 << 28;
 } // namespace
 
 
@@ -89,6 +90,19 @@ bool MovePicker::is_useless_potion(Move m) const {
 
       break;
   }
+
+  return false;
+}
+
+bool MovePicker::is_potion_move(Move m) const {
+
+  if (!pos.potions_enabled() || !is_gating(m))
+      return false;
+
+  PieceType gatingPiece = gating_type(m);
+  for (int idx = 0; idx < Variant::POTION_TYPE_NB; ++idx)
+      if (pos.potion_piece(static_cast<Variant::PotionType>(idx)) == gatingPiece)
+          return true;
 
   return false;
 }
@@ -146,14 +160,15 @@ void MovePicker::score() {
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
   for (auto& m : *this)
+  {
       if constexpr (Type == CAPTURES)
           m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
-                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   + (*gateHistory)[pos.side_to_move()][gating_square(m)]       
                    + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
 
       else if constexpr (Type == QUIETS)
           m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]
+                   +     (*gateHistory)[pos.side_to_move()][gating_square(m)]   
                    + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)]
                    +     (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)]
@@ -166,10 +181,15 @@ void MovePicker::score() {
               m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
                        - Value(type_of(pos.moved_piece(m)));
           else
-              m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
+              m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]     
                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
                        - (1 << 28);
       }
+
+      if constexpr (Type == CAPTURES || Type == QUIETS)
+          if (is_potion_move(m))
+              m.value -= PotionPenalty;
+  }
 }
 
 /// MovePicker::select() returns the next move satisfying a predicate function.
