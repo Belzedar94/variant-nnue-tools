@@ -1165,7 +1165,6 @@ moves_loop: // When in check, search starts from here
           if (pos.must_capture() && pos.attackers_to(to_sq(move), ~us))
           {}
           else
-
           if (   captureOrPromotion
               || givesCheck)
           {
