@@ -226,7 +226,7 @@ namespace {
     const Bitboard doubleStepRegion = pos.double_step_region(Us);
     const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
-    const Bitboard frozen     = pos.freeze_squares();
+    const Bitboard frozen     = pos.freeze_move_squares();
     const Bitboard pawns      = pos.pieces(Us, PAWN) & ~frozen;
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
     const Bitboard friendlyCapturable = pos.pieces(Us) & ~pos.pieces(Us, royal);
@@ -375,7 +375,7 @@ namespace {
     assert(Pt != KING && Pt != PAWN);
 
     Bitboard bb = pos.pieces(Us, Pt);
-    Bitboard frozen = pos.freeze_squares();
+    Bitboard frozen = pos.freeze_move_squares();
 
     const bool allowFriendlyCaptures = pos.self_capture()
                                     && (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS);
@@ -594,7 +594,7 @@ namespace {
     const Variant* var = pos.variant();
     const PieceType royal = pos.royal_piece_type();
     ExtMove* cur = baseEnd;
-    const Bitboard baseFrozen = pos.freeze_squares();
+    const Bitboard baseFrozen = pos.freeze_move_squares();
     const Bitboard allPieces = pos.pieces();
     const Square ksq = pos.count(Us, royal) ? pos.square(Us, royal) : SQ_NONE;
     const bool allowNonKing = Type != EVASIONS
@@ -631,8 +631,8 @@ namespace {
 
             if (potion == Variant::POTION_FREEZE)
             {
-                // Freeze only restricts moves, so reuse the base list and filter by frozen squares.
-                Bitboard frozen = baseFrozen | pos.freeze_zone_from_square(gate);
+                // New freeze zones apply after the move, so only existing frozen squares block it.
+                Bitboard frozen = baseFrozen;
                 ExtMove* write = cur;
                 for (ExtMove* it = baseStart; it != baseEnd; ++it)
                 {
