@@ -1319,7 +1319,8 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = freeze_squares();
+  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
+                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1535,7 +1536,7 @@ bool Position::legal(Move m) const {
       Square rto = to + (to_sq(m) > from_sq(m) ? WEST : EAST);
       if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))  
           return false;
-      if (freeze_squares() & to_sq(m))
+      if (frozen & to_sq(m))
           return false;
 
       // Only the castling king piece is subject to attack checks
@@ -1586,6 +1587,9 @@ bool Position::legal(Move m) const {
 
   // A non-king move is legal if the king is not under attack after the move.
   if (extinctionCapture)
+      return true;
+
+  if (allow_self_check())
       return true;
 
   return !(attackers_to(square(us, royal), occupied, ~us, janggiCannons) & ~SquareBB[to]);
@@ -1643,15 +1647,17 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
-  Bitboard frozen = freeze_squares();
+  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
+                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
       return false;
 
+  bool needsEvasion = checkers() && !allow_self_check();
   if (type_of(m) != NORMAL || (is_gating(m) && gatingPotion == Variant::POTION_TYPE_NB))
-      return checkers() ? MoveList<    EVASIONS>(*this).contains(m)
-                        : MoveList<NON_EVASIONS>(*this).contains(m);
+      return needsEvasion ? MoveList<    EVASIONS>(*this).contains(m)
+                          : MoveList<NON_EVASIONS>(*this).contains(m);
 
   //if walling, and walling is not optional, or they didn't move, do the checks.
   if (walling() && (!var->wallOrMove || (from==to)))
@@ -1808,7 +1814,8 @@ bool Position::gives_check(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = freeze_squares();
+  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
+                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
