@@ -1166,7 +1166,7 @@ Bitboard Position::slider_blockers(Bitboard sliders, Square s, Bitboard& pinners
 
 Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const {
 
-  const Bitboard active = potions_enabled() ? ~freeze_squares() : ~Bitboard(0);
+  const Bitboard active = potions_enabled() ? ~freeze_squares(c) : ~Bitboard(0);
 
   // Use a faster version for variants with moderate rule variations
   if (var->fastAttacks)
@@ -1319,8 +1319,7 @@ bool Position::legal(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
-                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
+  Bitboard frozen = freeze_squares(us);
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1651,8 +1650,7 @@ bool Position::pseudo_legal(const Move m) const {
 
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
 
-  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
-                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
+  Bitboard frozen = freeze_squares(us);
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
@@ -1818,8 +1816,7 @@ bool Position::gives_check(Move m) const {
   SpellContextScope spellScope(*this, freezeExtra, jumpRemoved);
   PieceType royal = royal_piece_type();
 
-  Bitboard frozen = st->potionZones[WHITE][Variant::POTION_FREEZE]
-                  | st->potionZones[BLACK][Variant::POTION_FREEZE];
+  Bitboard frozen = freeze_squares(sideToMove);
   if (type_of(m) != DROP && (frozen & from))
       return false;
   if (jumpRemoved && (square_bb(to) & jumpRemoved))
