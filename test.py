@@ -1004,6 +1004,18 @@ class TestPyffish(unittest.TestCase):
         self.assertNotEqual(result, sf.VALUE_MATE)
         self.assertNotEqual(result, -sf.VALUE_MATE)
 
+    def test_spell_chess_freeze_mate_in_two_threat(self):
+        fen = "rnbqkb1r/pppppppp/8/1n2P3/8/8/PPPP1PPP/R1BQK1NR[JJFFFFFjjffff] {F@-:0,J@-:0,f@-:2,j@-:0} w KQkq - 0 5"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("f@g7,d1h5", moves)
+        result = sf.game_result("spell-chess", fen, ["f@g7,d1h5", "a7a6", "h5f7"])
+        self.assertGreaterEqual(result, sf.VALUE_MATE)
+
+    def test_spell_chess_jump_zone_expired_allows_capture(self):
+        fen = "2rqk2r/pp2nppp/8/1p2Q3/1P1nP3/3PBP2/PP3P1P/R3K2R[JFFFjjfff] {F@-:1,J@d4:2,f@-:0,j@-:0} w KQk - 1 14"
+        moves = sf.legal_moves("spell-chess", fen, [])
+        self.assertIn("e3d4", moves)
+
     def test_get_san(self):
         fen = "4k3/8/3R4/8/1R3R2/8/3R4/4K3 w - - 0 1"
         result = sf.get_san("chess", fen, "b4d4")

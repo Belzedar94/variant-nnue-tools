@@ -539,6 +539,28 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
   sideToMove = (token != (sfen ? 'w' : 'b') ? WHITE : BLACK);  // Invert colors for SFEN
   ss >> token;
 
+  if (!sfen && potions_enabled())
+  {
+      for (Color c : {WHITE, BLACK})
+          for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+          {
+              Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+              if (potion_piece(potion) == NO_PIECE_TYPE)
+                  continue;
+
+              int cooldown = st->potionCooldown[c][pt];
+              if (cooldown <= 0)
+              {
+                  st->potionZones[c][pt] = Bitboard(0);
+                  continue;
+              }
+
+              int zoneLifetime = std::max(var->potionCooldown[pt] - 1, 0);
+              if (cooldown < zoneLifetime || (cooldown == zoneLifetime && sideToMove == c))
+                  st->potionZones[c][pt] = Bitboard(0);
+          }
+  }
+
   // 3-4. Skip parsing castling and en passant flags if not present
   st->epSquares = 0;
   st->castlingKingSquare[WHITE] = st->castlingKingSquare[BLACK] = SQ_NONE;
