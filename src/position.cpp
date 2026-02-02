@@ -2571,8 +2571,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
               continue;
 
           int cooldown = var->potionCooldown[pt];
-          int zoneLifetime = std::max(cooldown - 1, 0);
-
           if (gatingPotion == potion)
           {
               st->potionCooldown[us][pt] = cooldown;
