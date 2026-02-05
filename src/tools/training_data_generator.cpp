@@ -409,7 +409,7 @@ namespace Stockfish::Tools
                         if (pt == KING || int(prng.rand(PieceValue[EG][pt])) > 20 + (pos.variant()->nnueMaxPieces / 2 - pos.count<ALL_PIECES>() - pos.count_in_hand(ALL_PIECES)))
                             continue;
                         for (Color c : { WHITE, BLACK })
-                            fen.insert(fen.find(']'), 1, pos.piece_to_char()[make_piece(c, pt)]);
+                            fen.insert(fen.find(']'), pos.piece_symbol(make_piece(c, pt)));
                     }
                     pos.set(variants.find(Options["UCI_Variant"])->second, fen, false, &si, &th);
                 }

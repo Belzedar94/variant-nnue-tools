@@ -2,9 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [ master, tools ]
   pull_request:
-    branches: [ master, tools ]
 
 jobs:
   windows:
