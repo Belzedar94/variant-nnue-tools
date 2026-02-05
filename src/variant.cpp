@@ -2296,7 +2296,5 @@ std::vector<std::string> VariantMap::get_keys() {
 // VariantPath parsing entry points.
 template void VariantMap::parse_istream<true>(std::istream&);
 template void VariantMap::parse_istream<false>(std::istream&);
-template void VariantMap::parse<true>(const std::string&);
-template void VariantMap::parse<false>(const std::string&);
 
 } // namespace Stockfish
