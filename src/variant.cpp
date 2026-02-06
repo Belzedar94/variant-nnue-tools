@@ -91,6 +91,7 @@ namespace {
         v->potionDropOnOccupied = true;
         v->remove_piece(KING);
         v->add_piece(COMMONER, 'k');
+        v->royalPiece = COMMONER;
         v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
         v->pieceToChar[make_piece(WHITE, CUSTOM_PIECE_1)] = 'F';
         v->pieceToChar[make_piece(BLACK, CUSTOM_PIECE_1)] = 'f';
@@ -2072,6 +2073,13 @@ Variant* Variant::conclude() {
     int nnuePockets = nnueUsePockets ? 2 * int(maxFile + 1) : 0;
     int nnueNonDropPieceIndices = (2 * std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnueSquares;
     int nnuePieceIndices = nnueNonDropPieceIndices + 2 * (std::bitset<64>(pieceTypes).count() - (nnueKing != NO_PIECE_TYPE)) * nnuePockets;
+    bool nnueHasPotions = potions;
+    nnuePotionZoneIndexBase = nnueHasPotions ? nnuePieceIndices : -1;
+    if (nnueHasPotions)
+        nnuePieceIndices += nnueSquares * COLOR_NB * Variant::POTION_TYPE_NB;
+    nnuePotionCooldownIndexBase = nnueHasPotions ? nnuePieceIndices : -1;
+    if (nnueHasPotions)
+        nnuePieceIndices += COLOR_NB * Variant::POTION_TYPE_NB * POTION_COOLDOWN_BITS;
     int i = 0;
     for (PieceSet ps = pieceTypes; ps;)
     {
@@ -2283,5 +2291,10 @@ std::vector<std::string> VariantMap::get_keys() {
       keys.push_back(element.first);
   return keys;
 }
+
+// Explicit instantiations keep linkers happy in builds that still reference
+// VariantPath parsing entry points.
+template void VariantMap::parse_istream<true>(std::istream&);
+template void VariantMap::parse_istream<false>(std::istream&);
 
 } // namespace Stockfish

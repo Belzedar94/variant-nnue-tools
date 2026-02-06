@@ -162,12 +162,38 @@ namespace Stockfish::Tools {
         {0b11111,5}, //
     };
 
-    inline Square to_variant_square(Square s, const Position& pos) {
-        return Square(s - rank_of(s) * (FILE_MAX - pos.max_file()));
+    inline Square to_variant_square(Square s, const Position& pos) {     
+        return Square(s - rank_of(s) * (FILE_MAX - pos.max_file()));     
+    }    
+
+    inline Square from_variant_square(Square s, const Position& pos) {   
+        return Square(s + s / pos.files() * (FILE_MAX - pos.max_file()));
     }
 
-    inline Square from_variant_square(Square s, const Position& pos) {
-        return Square(s + s / pos.files() * (FILE_MAX - pos.max_file()));
+    inline Square potion_zone_center(const Position& pos, Variant::PotionType potion,
+                                     Bitboard zone) {
+        if (!zone)
+            return SQ_NONE;
+        if (potion == Variant::POTION_FREEZE)
+        {
+            Bitboard candidates = zone;
+            while (candidates)
+            {
+                Square s = pop_lsb(candidates);
+                if (pos.freeze_zone_from_square(s) == zone)
+                    return s;
+            }
+        }
+        return lsb(zone);
+    }
+
+    inline Bitboard potion_zone_from_center(const Position& pos, Variant::PotionType potion,
+                                            Square s) {
+        if (s == SQ_NONE)
+            return Bitboard(0);
+        if (potion == Variant::POTION_FREEZE)
+            return pos.freeze_zone_from_square(s);
+        return square_bb(s);
     }
 
     // Pack sfen and store in data[64].
@@ -200,6 +226,27 @@ namespace Stockfish::Tools {
         for(auto c: Colors)
             for (PieceSet ps = pos.piece_types(); ps;)
                 stream.write_n_bit(pos.count_in_hand(c, pop_lsb(ps)), DATA_SIZE > 512 ? 7 : 5);
+
+        if (pos.potions_enabled())
+        {
+            for (auto c : Colors)
+                for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+                {
+                    Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+                    Bitboard zone = pos.potion_zone(c, potion);
+                    const bool has_zone = zone != Bitboard(0);
+                    Square center = has_zone ? potion_zone_center(pos, potion, zone) : SQ_NONE;
+                    stream.write_one_bit(has_zone ? 1 : 0);
+                    stream.write_n_bit(has_zone ? to_variant_square(center, pos) : 0, 7);
+                    int cooldown = pos.potion_cooldown(c, potion);
+                    if (cooldown < 0)
+                        cooldown = 0;
+                    const int maxCooldown = (1u << POTION_COOLDOWN_BITS) - 1;
+                    if (cooldown > maxCooldown)
+                        cooldown = maxCooldown;
+                    stream.write_n_bit(cooldown, POTION_COOLDOWN_BITS);
+                }
+        }
 
         // TODO(someone): Support chess960.
         stream.write_one_bit(pos.can_castle(WHITE_OO));
@@ -337,7 +384,7 @@ namespace Stockfish::Tools {
 
                 pos.put_piece(Piece(pc), sq);
 
-                if (stream.get_cursor()> 512)
+                if (stream.get_cursor()> DATA_SIZE)
                     return 1;
             }
         }
@@ -351,6 +398,25 @@ namespace Stockfish::Tools {
                 for (int i = 0; i < count; ++i)
                     pos.add_to_hand(make_piece(c, pt));
             }
+
+        if (pos.potions_enabled())
+        {
+            for (auto c : Colors)
+                for (int pt = 0; pt < Variant::POTION_TYPE_NB; ++pt)
+                {
+                    Variant::PotionType potion = static_cast<Variant::PotionType>(pt);
+                    const bool has_zone = stream.read_one_bit() != 0;
+                    Square center = SQ_NONE;
+                    if (has_zone)
+                        center = from_variant_square(Square(stream.read_n_bit(7)), pos);
+                    else
+                        stream.read_n_bit(7);
+                    const int cooldown = stream.read_n_bit(POTION_COOLDOWN_BITS);
+                    pos.st->potionCooldown[c][pt] = cooldown;
+                    pos.st->potionZones[c][pt] =
+                        has_zone ? potion_zone_from_center(pos, potion, center) : Bitboard(0);
+                }
+        }
 
         // Castling availability.
         // TODO(someone): Support chess960.
