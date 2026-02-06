@@ -1214,7 +1214,12 @@ moves_loop: // When in check, search starts from here
       // Calculate new depth for this move
       newDepth = depth - 1;
       if (is_potion_gating_move(pos, move) && depth >= 3)
-          newDepth = std::max(newDepth - (givesCheck || captureOrPromotion || tacticalPotion ? 1 : 2), 0);
+      {
+          int penalty = (givesCheck || captureOrPromotion || tacticalPotion) ? 1 : 2;
+          if (tacticalPotion)
+              penalty = 0; // Tactical potion moves behave like regular tactics.
+          newDepth = std::max(newDepth - penalty, 0);
+      }
 
       // Step 13. Pruning at shallow depth (~200 Elo)
       if (  !rootNode
