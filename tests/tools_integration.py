@@ -364,6 +364,9 @@ e
             newline="\n",
         )
         run_engine(
+            engine, "validate_training_data {}".format(standard_ep_plain)
+        )
+        run_engine(
             engine,
             "convert_bin targetfile {} output_file_name {}".format(
                 standard_ep_plain, standard_ep_binary
@@ -381,6 +384,9 @@ e
             ),
             encoding="utf-8",
             newline="\n",
+        )
+        expect_validation_failure(
+            engine, inconsistent_ep_plain, "invalid or non-canonical FEN"
         )
         run_engine(
             engine,

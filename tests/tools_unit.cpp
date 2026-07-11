@@ -1,6 +1,7 @@
 #include "evaluate.h"
 #include "tools/packed_sfen.h"
 #include "tools/random_seed.h"
+#include "tools/sfen_stream.h"
 
 #include <cassert>
 #include <cstdint>
@@ -50,6 +51,17 @@ void test_unrepresentable_legacy_moves_are_rejected()
       make<PROMOTION>(SQ_E7, SQ_E8, COMMONER), encoded));
 }
 
+void test_epd_output_does_not_encode_unused_moves()
+{
+    using Stockfish::Tools::encode_move_for_sfen_output;
+    using Stockfish::Tools::SfenOutputType;
+
+    const Move unrepresentable_drop = make_drop(SQ_E4, PAWN, PAWN);
+    assert(encode_move_for_sfen_output(unrepresentable_drop, SfenOutputType::Epd) == 0);
+    assert(encode_move_for_sfen_output(make_move(SQ_E2, SQ_E4), SfenOutputType::Bin)
+           == 0x031c);
+}
+
 void test_replayable_prng_seed()
 {
     using Stockfish::Tools::resolve_replayable_seed;
@@ -93,6 +105,7 @@ int main()
 
     test_legacy_move_wire_format();
     test_unrepresentable_legacy_moves_are_rejected();
+    test_epd_output_does_not_encode_unused_moves();
     test_replayable_prng_seed();
     test_nnue_mode_is_preserved_after_variant_matching();
 

@@ -22,8 +22,11 @@ Set `UCI_Variant` to the dataset variant before invoking the command. A valid
 - a move legal in the decoded position.
 
 Plain validation checks record framing, FEN/move presence, representability,
-and numeric domains. A failure prints the record or line context and terminates
-with a non-zero exit status. Success prints the validated record count.
+and numeric domains. A consistent standard-FEN en-passant target is accepted
+when Fairy's X-FEN serializer normalizes it to `-` because no opposing pawn can
+capture; inconsistent targets still fail. A failure prints the record or line
+context and terminates with a non-zero exit status. Success prints the validated
+record count.
 
 This legacy release gate is intentionally scoped to the 512-bit 8x8 layout
 used by Atomic (two NNUE kings and non-Chess960 castling). Other board schemas

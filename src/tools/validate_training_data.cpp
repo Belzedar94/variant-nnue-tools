@@ -1,5 +1,6 @@
 #include "validate_training_data.h"
 
+#include "fen_validation.h"
 #include "movegen.h"
 #include "position.h"
 #include "thread.h"
@@ -248,20 +249,6 @@ bool move_is_legal(const Position& position, Move move)
         if (legal == move)
             return true;
     return false;
-}
-
-bool fen_rule_fields_match(const std::string& input, const Position& position)
-{
-    std::istringstream input_fields(input);
-    std::istringstream canonical_fields(position.fen());
-    for (int field = 0; field < 4; ++field)
-    {
-        std::string expected;
-        std::string actual;
-        if (!(input_fields >> expected) || !(canonical_fields >> actual) || expected != actual)
-            return false;
-    }
-    return true;
 }
 
 void validate_bin(const std::string& path)

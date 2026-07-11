@@ -378,7 +378,8 @@ namespace Stockfish::Tools
                         pos.sfen_pack(psv.sfen);
 
                         psv.score = search_value;
-                        psv.move = encode_legacy_move(search_pv[0]);
+                        psv.move = encode_move_for_sfen_output(
+                          search_pv[0], params.sfen_format);
                         psv.gamePly = ply;
                     }
                 }

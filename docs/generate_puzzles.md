@@ -75,6 +75,10 @@ Currently the following options are available:
 `adjudicate_draws_by_insufficient_mating_material` - either 0 or 1. If 1 then positions with insufficient material will be adjudicated as draws. Default: 1.
 
 `data_format` - format of the puzzle data to use. Supported formats are `bin` (binary PackedSfenValue format) and `epd` (Extended Position Description, FEN strings). Default: `epd`.
+EPD stores only the position and therefore does not impose the historical
+16-bit move-wire restrictions on the discarded solution move. Binary output
+does encode that move and rejects drops, gating, or other moves that the legacy
+8x8 wire cannot represent.
 
 `seed` - numeric or textual seed. It is resolved once and printed as the
 replayable decimal `PRNG::initial_seed`. Identical inputs/options with

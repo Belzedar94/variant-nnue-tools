@@ -19,6 +19,18 @@ namespace Stockfish::Tools {
         Epd
     };
 
+    inline std::uint16_t encode_move_for_sfen_output(Move move,
+                                                     SfenOutputType output_type)
+    {
+        // EPD stores only the unpacked position, so its unused move field must
+        // not impose the historical 8x8 move-wire restrictions. Binary output
+        // continues to require the exact legacy encoding.
+        if (output_type == SfenOutputType::Epd)
+            return 0;
+
+        return encode_legacy_move(move);
+    }
+
     static bool ends_with(const std::string& lhs, const std::string& end)
     {
         if (end.size() > lhs.size()) return false;
