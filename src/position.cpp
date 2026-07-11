@@ -34,8 +34,10 @@
 #include "uci.h"
 #include "syzygy/tbprobe.h"
 
+#ifndef NO_NNUE_TOOLS
 #include "tools/packed_sfen.h"
 #include "tools/sfen_packer.h"
+#endif
 
 using std::string;
 
@@ -1298,6 +1300,35 @@ bool Position::legal(Move m) const {
 
   // A non-king move is legal if the king is not under attack after the move.
   return !(attackers_to(square<KING>(us), occupied, ~us, janggiCannons) & ~SquareBB[to]);
+}
+
+
+// Test whether one of the pseudo-attackers can legally capture a flag piece.
+// When the attacker is not the side to move, use an isolated position with
+// only the FEN side-to-move field changed.
+bool Position::has_legal_flag_capture(Color attacker, Square target, Bitboard candidates) const {
+
+  std::unique_ptr<StateInfo> alternateState;
+  std::unique_ptr<Position> alternate;
+  const Position* capturePos = this;
+
+  if (attacker != sideToMove)
+  {
+      string alternateFen = fen();
+      size_t sideField = alternateFen.find(' ');
+      assert(sideField != string::npos && sideField + 1 < alternateFen.size());
+      alternateFen[sideField + 1] = attacker == WHITE ? 'w' : 'b';
+      alternate = std::make_unique<Position>();
+      alternateState = std::make_unique<StateInfo>();
+      alternate->set(var, alternateFen, chess960, alternateState.get(), thisThread);
+      capturePos = alternate.get();
+  }
+
+  while (candidates)
+      if (capturePos->legal(make_move(pop_lsb(candidates), target)))
+          return true;
+
+  return false;
 }
 
 
@@ -3344,6 +3375,7 @@ bool Position::pos_is_ok() const {
   return true;
 }
 
+#ifndef NO_NNUE_TOOLS
 // Add a function that directly unpacks for speed. It's pretty tough.
 // Write it by combining packer::unpack() and Position::set().
 // If there is a problem with the passed phase and there is an error, non-zero is returned.
@@ -3357,5 +3389,6 @@ void Position::sfen_pack(Tools::PackedSfen& sfen)
 {
   sfen = Tools::sfen_pack(*this);
 }
+#endif
 
 } // namespace Stockfish

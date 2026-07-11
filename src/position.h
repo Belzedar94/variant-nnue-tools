@@ -34,8 +34,10 @@
 
 #include "nnue/nnue_accumulator.h"
 
+#ifndef NO_NNUE_TOOLS
 #include "tools/packed_sfen.h"
 #include "tools/sfen_packer.h"
+#endif
 
 namespace Stockfish {
 
@@ -352,6 +354,7 @@ public:
 
   // --sfenization helper
 
+#ifndef NO_NNUE_TOOLS
   friend int Tools::set_from_packed_sfen(Position& pos, const Tools::PackedSfen& sfen, StateInfo* si, Thread* th);
 
   // Get the packed sfen. Returns to the buffer specified in the argument.
@@ -363,6 +366,7 @@ public:
   // If there is a problem with the passed phase and there is an error, non-zero is returned.
   // PackedSfen does not include gamePly so it cannot be restored. If you want to set it, specify it with an argument.
   int set_from_packed_sfen(const Tools::PackedSfen& sfen, StateInfo* si, Thread* th);
+#endif
 
   void clear() { std::memset(this, 0, sizeof(Position)); }
 
@@ -382,6 +386,7 @@ private:
   void set_check_info(StateInfo* si) const;
 
   // Other helpers
+  bool has_legal_flag_capture(Color attacker, Square target, Bitboard candidates) const;
   void move_piece(Square from, Square to);
   template<bool Do>
   void do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto);
@@ -1100,7 +1105,7 @@ inline bool Position::flag_reached(Color c) const {
       {
           Square sr = pop_lsb(piecesInFlagZone);
           Bitboard flagAttackers = attackers_to(sr, ~c);
-          if (flagAttackers)
+          if (flagAttackers && has_legal_flag_capture(~c, sr, flagAttackers))
               return false;
       }
   }

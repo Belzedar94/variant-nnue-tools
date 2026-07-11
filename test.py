@@ -74,6 +74,11 @@ startFen = rbnkbr/pppppp/6/6/PPPPPP/RBNKBR w KQkq - 0 1
 [passchess:chess]
 pass = true
 
+[squatter-test:chess]
+flagRegionWhite = *8
+flagRegionBlack = *1
+flagPieceSafe = true
+
 [royalduck:duck]
 extinctionPseudoRoyal = true
 
@@ -1140,6 +1145,16 @@ class TestPyffish(unittest.TestCase):
         self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b4a4"], True, -sf.VALUE_MATE)
         self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b2b3"], True, sf.VALUE_DRAW)
         self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b4b3"], False)
+
+        # A pinned pseudo-attacker cannot prevent a flagPieceSafe win. Cover
+        # both the current side and the isolated opposite-side legality path.
+        squatter_pinned = "2K1k3/4n3/8/8/8/8/8/4R3"
+        self._check_immediate_game_end("squatter-test", squatter_pinned + " b - - 0 1", [], True, -sf.VALUE_MATE)
+        self._check_immediate_game_end("squatter-test", squatter_pinned + " w - - 0 1", [], True, sf.VALUE_MATE)
+
+        # Moving the rook off the e-file makes the knight capture legal, so it
+        # must still prevent the flag win.
+        self._check_immediate_game_end("squatter-test", "2K1k3/4n3/8/8/8/8/8/3R4 b - - 0 1", [], False)
 
     def _check_optional_game_end(self, variant, fen, moves, game_end, game_result=None):
         with self.subTest(variant=variant, fen=fen, game_end=game_end, game_result=game_result):

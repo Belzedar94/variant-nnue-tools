@@ -451,6 +451,14 @@ describe('board.result()', function () {
     board.pushSan("Qe6");
     chai.expect(board.result()).to.equal("0-1");
 
+    // Insufficient material with material counting - black draw odds (armageddon)
+    board.setFen("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+    chai.expect(board.isInsufficientMaterial()).to.equal(true);
+    chai.expect(board.result()).to.equal("0-1");
+    board.setFen("4k3/8/8/8/8/8/8/4K3 b - - 0 1");
+    chai.expect(board.isInsufficientMaterial()).to.equal(true);
+    chai.expect(board.result()).to.equal("0-1");
+
     // Atomic chess exploded king (variant ending)
     board.delete();
     board = new ffish.Board("atomic");
