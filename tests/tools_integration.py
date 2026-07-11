@@ -127,6 +127,8 @@ def main():
         standard_ep_binary = root / "standard-ep.bin"
         inconsistent_ep_plain = root / "inconsistent-ep.plain"
         inconsistent_ep_binary = root / "inconsistent-ep.bin"
+        disabled_ep_plain = root / "disabled-ep.plain"
+        disabled_ep_binary = root / "disabled-ep.bin"
 
         # The second record deliberately omits score/ply/result. It must receive
         # the format defaults rather than inheriting values from the first one.
@@ -398,6 +400,43 @@ e
         )
         if inconsistent_ep_binary.exists():
             raise AssertionError("inconsistent en-passant FEN left an output file")
+
+        disabled_ep_plain.write_text(
+            """fen rnbakbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBAKBNR b - e3 0 1
+move e7e5
+score 0
+ply 1
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        georgian_option = ["setoption name UCI_Variant value georgian"]
+        validation_output = run_engine(
+            engine,
+            "validate_training_data {}".format(disabled_ep_plain),
+            expect_success=False,
+            failure_text="Validation failed",
+            extra_commands=georgian_option,
+        )
+        if "invalid or non-canonical FEN" not in validation_output:
+            raise AssertionError(
+                "no-en-passant variant was rejected for the wrong reason:\n{}".format(
+                    validation_output
+                )
+            )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {}".format(
+                disabled_ep_plain, disabled_ep_binary
+            ),
+            expect_success=False,
+            failure_text="produced no valid records",
+            extra_commands=georgian_option,
+        )
+        if disabled_ep_binary.exists():
+            raise AssertionError("no-en-passant variant left an output file")
 
         stats_command = "gather_statistics position_count input_file {} output_file {}".format(
             binary, stats_output

@@ -31,7 +31,8 @@ inline bool standard_ep_target_is_consistent(const Position& position,
     const Square pawn_square = target + push;
     const Square origin_square = target - push;
 
-    return position.piece_on(target) == NO_PIECE
+    return (position.variant()->enPassantRegion[side] & target)
+        && position.piece_on(target) == NO_PIECE
         && position.piece_on(pawn_square) == make_piece(moved_side, PAWN)
         && position.piece_on(origin_square) == NO_PIECE;
 }
@@ -42,7 +43,8 @@ inline bool standard_ep_target_is_consistent(const Position& position,
 // therefore drops a standard-FEN en-passant target when no opposing pawn can
 // capture. Accept only that normalization, and only when the double-pushed
 // pawn, empty target, and empty origin make the standard target internally
-// consistent.
+// consistent. The target must also belong to the variant's en-passant region;
+// variants that disable en passant must not gain it through normalization.
 inline bool fen_rule_fields_match(const std::string& input, const Position& position)
 {
     std::istringstream input_stream(input);
