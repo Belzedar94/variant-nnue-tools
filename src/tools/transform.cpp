@@ -312,7 +312,7 @@ namespace Stockfish::Tools
                 PackedSfenValue ps;
                 pos.sfen_pack(ps.sfen);
                 ps.score = search_value;
-                ps.move = search_pv[0];
+                ps.move = encode_legacy_move(search_pv[0]);
                 ps.gamePly = 1;
                 ps.game_result = 0;
                 ps.padding = 0;
@@ -423,7 +423,7 @@ namespace Stockfish::Tools
                     pos.sfen_pack(ps.sfen);
                     ps.score = search_value;
                     if (!params.keep_moves)
-                        ps.move = search_pv[0];
+                        ps.move = encode_legacy_move(search_pv[0]);
                     ps.padding = 0;
 
                     out.write(th.id(), ps);

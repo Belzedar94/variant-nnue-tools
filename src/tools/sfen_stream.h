@@ -1,6 +1,7 @@
 #ifndef _SFEN_STREAM_H_
 #define _SFEN_STREAM_H_
 
+#include "output_file.h"
 #include "packed_sfen.h"
 #include "sfen_packer.h"
 
@@ -32,7 +33,7 @@ namespace Stockfish::Tools {
 
     static std::string filename_with_extension(const std::string& filename, const std::string& ext)
     {
-        if (ends_with(filename, ext))
+        if (has_extension(filename, ext))
         {
             return filename;
         }
@@ -94,28 +95,33 @@ namespace Stockfish::Tools {
 
     struct BinSfenOutputStream : BasicSfenOutputStream
     {
-        static constexpr auto openmode = std::ios::out | std::ios::binary | std::ios::app;
+        static constexpr auto openmode = std::ios::out | std::ios::binary;
         static inline const std::string extension = "bin";
 
-        BinSfenOutputStream(std::string filename) :
-            m_stream(filename_with_extension(filename, extension), openmode)
+        BinSfenOutputStream(std::string filename)
+            : m_path(filename_with_extension(filename, extension))
         {
+            open_new_output_file_or_exit(m_stream, m_path, openmode);
         }
 
         void write(const PSVector& sfens) override
         {
             m_stream.write(reinterpret_cast<const char*>(sfens.data()), sizeof(PackedSfenValue) * sfens.size());
+            m_stream.flush();
+            if (!m_stream)
+                output_file_error(m_path, "write failed");
         }
 
         ~BinSfenOutputStream() override {}
 
     private:
+        std::string m_path;
         std::fstream m_stream;
     };
 
     struct EpdSfenOutputStream : BasicSfenOutputStream
     {
-        static constexpr auto openmode = std::ios::out | std::ios::app;
+        static constexpr auto openmode = std::ios::out;
         static inline const std::string extension = "epd";
 
         EpdSfenOutputStream(std::string filename);
@@ -125,6 +131,7 @@ namespace Stockfish::Tools {
         ~EpdSfenOutputStream() override {}
 
     private:
+        std::string m_path;
         std::fstream m_stream;
     };
 

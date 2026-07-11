@@ -5,8 +5,9 @@
 namespace Stockfish::Tools {
 
     EpdSfenOutputStream::EpdSfenOutputStream(std::string filename)
-        : m_stream(filename_with_extension(filename, extension), openmode)
+        : m_path(filename_with_extension(filename, extension))
     {
+        open_new_output_file_or_exit(m_stream, m_path, openmode);
     }
 
     void EpdSfenOutputStream::write(const PSVector& sfens)
@@ -25,6 +26,9 @@ namespace Stockfish::Tools {
             fen_line.push_back('\n');
             m_stream << fen_line;
         }
+        m_stream.flush();
+        if (!m_stream)
+            output_file_error(m_path, "write failed");
     }
 
 }

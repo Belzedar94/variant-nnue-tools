@@ -94,7 +94,7 @@ struct MoveList {
   }
 
   // returns the i th element
-  const ExtMove at(size_t i) const { assert(0 <= i && i < size()); return begin()[i]; }
+  const ExtMove at(size_t i) const { assert(i < size()); return begin()[i]; }
 
 private:
     ExtMove* last;

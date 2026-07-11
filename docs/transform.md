@@ -2,6 +2,8 @@
 
 `transform` command exposes subcommands that perform some specific transformation over data. The call syntax is `transform <subcommand>`. Currently implemented subcommands are listed and described below.
 
+All transform outputs use exclusive creation and reject an existing path.
+
 ## `nudged_static`
 
 `transform nudged_static` takes named parameters in the form of `transform nudged_static param_1_name param_1_value param_2_name param_2_value ...` and flag parameters which don't require values.
@@ -32,7 +34,8 @@ Currently the following options are available:
 
 `input_file` - path to the input file. Default: in.bin.
 
-`output_file` - path to the output .bin file. The file is opened in append mode. Default: out.bin.
+`output_file` - path to the output `.bin` file. The path must not already exist;
+the command never appends or overwrites. Default: `out.bin`.
 
 `depth` - the search depth to use for rescoring. Default: 3.
 

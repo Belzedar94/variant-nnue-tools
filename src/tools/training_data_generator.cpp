@@ -3,6 +3,7 @@
 #include "sfen_writer.h"
 #include "packed_sfen.h"
 #include "opening_book.h"
+#include "random_seed.h"
 
 #include "misc.h"
 #include "position.h"
@@ -17,10 +18,12 @@
 #include "apiutil.h"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -118,6 +121,7 @@ namespace Stockfish::Tools
 
         // Hash to limit the export of identical sfens
         static constexpr uint64_t GENSFEN_HASH_SIZE = 64 * 1024 * 1024;
+        static constexpr std::size_t GENSFEN_HASH_MUTEX_COUNT = 4096;
         // It must be 2**N because it will be used as the mask to calculate hash_index.
         static_assert((GENSFEN_HASH_SIZE& (GENSFEN_HASH_SIZE - 1)) == 0);
 
@@ -133,11 +137,13 @@ namespace Stockfish::Tools
         {
             hash.resize(GENSFEN_HASH_SIZE);
             prngs.reserve(prm.num_threads);
-            auto seed = prm.seed;
+            PRNG seed_source(prm.seed);
+            uint64_t seed = seed_source.get_seed();
+            std::cout << "PRNG::initial_seed = " << seed << std::endl;
             for (uint64_t i = 0; i < prm.num_threads; ++i)
             {
                 prngs.emplace_back(seed);
-                seed = prngs.back().next_random_seed();
+                seed = seed_source.next_random_seed();
             }
 
             if (!prm.book.empty())
@@ -148,9 +154,6 @@ namespace Stockfish::Tools
                     std::cout << "WARNING: Failed to open opening book " << prm.book << ". Falling back to startpos.\n";
                 }
             }
-
-            // Output seed to verify by the user if it's not identical by chance.
-            std::cout << prngs[0] << std::endl;
         }
 
         void generate(uint64_t limit);
@@ -169,6 +172,7 @@ namespace Stockfish::Tools
         SynchronizedRegionLogger::Region out;
 
         vector<Key> hash; // 64MB*sizeof(HASH_KEY) = 512MB
+        std::array<std::mutex, GENSFEN_HASH_MUTEX_COUNT> hash_mutexes;
 
         std::unique_ptr<OpeningBook> opening_book;
 
@@ -380,7 +384,7 @@ namespace Stockfish::Tools
                                        - 6 * 1200 / (5 * pos.checks_remaining(~pos.side_to_move()));
                     }
                     psv.score = search_value;
-                    psv.move = search_pv[0];
+                    psv.move = encode_legacy_move(search_pv[0]);
                     psv.gamePly = ply;
                 }
 
@@ -425,6 +429,7 @@ namespace Stockfish::Tools
         // positions without many false positives.
         auto key = pos.key();
         auto hash_index = (size_t)(key & (GENSFEN_HASH_SIZE - 1));
+        std::lock_guard lock(hash_mutexes[hash_index % GENSFEN_HASH_MUTEX_COUNT]);
         auto old_key = hash[hash_index];
         if (key == old_key)
         {
@@ -834,7 +839,7 @@ namespace Stockfish::Tools
             else
             {
                 cout << "ERROR: Unknown option " << token << ". Exiting...\n";
-                return;
+                std::exit(EXIT_FAILURE);
             }
         }
 
@@ -843,8 +848,38 @@ namespace Stockfish::Tools
             if (sfen_format == "bin")
                 params.sfen_format = SfenOutputType::Bin;
             else
-                cout << "WARNING: Unknown sfen format `" << sfen_format << "`. Using bin\n";
+            {
+                cout << "ERROR: Unknown sfen format `" << sfen_format << "`.\n";
+                std::exit(EXIT_FAILURE);
+            }
         }
+
+        if (loop_max == 0
+            || params.search_depth_min < 0 || params.search_depth_max < -1
+            || params.write_minply < 0 || params.write_maxply < params.write_minply
+            || params.write_maxply > std::numeric_limits<std::uint16_t>::max()
+            || params.random_move_minply < -1 || params.random_move_maxply < 0
+            || (params.random_move_minply != -1
+                && params.random_move_maxply < params.random_move_minply)
+            || params.random_move_count < 0 || params.random_multi_pv < 0
+            || params.random_multi_pv_diff < 0
+            || params.random_move_like_apery < 0
+            || !std::isfinite(params.write_out_draw_game_in_training_data_generation)
+            || params.write_out_draw_game_in_training_data_generation < 0
+            || params.write_out_draw_game_in_training_data_generation > 1
+            || params.eval_limit <= 0 || params.eval_diff_limit < 0
+            || params.output_file_name.empty())
+        {
+            cout << "ERROR: Invalid generate_training_data parameter range.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        if (Options["UCI_Chess960"])
+        {
+            cout << "ERROR: Legacy v1 training data cannot represent Chess960 castling state.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        params.seed = resolve_replayable_seed(params.seed);
 
         if (random_file_name)
         {
@@ -892,6 +927,7 @@ namespace Stockfish::Tools
             << "  - output_file_name       = " << params.output_file_name << endl
             << "  - save_every             = " << params.save_every << endl
             << "  - random_file_name       = " << random_file_name << endl
+            << "  - seed                   = " << params.seed << endl
             << "  - keep_draws             = " << params.write_out_draw_game_in_training_data_generation << endl
             << "  - draw by low score      = " << params.detect_draw_by_consecutive_low_score << endl
             << "  - draw by insuff. mat.   = " << params.detect_draw_by_insufficient_mating_material << endl

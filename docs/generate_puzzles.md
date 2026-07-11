@@ -10,6 +10,8 @@ It is recommended to keep the `EnableTranspositionTable` UCI option at the defau
 
 A very minimal example is `generate_puzzles count 100 output_file_name test.epd`.
 
+Output paths are exclusive and are never appended to or overwritten.
+
 The reported puzzles only fulfill a very basic set of requirements. It is highly recommended to further validate and filter them using [ianfab/chess-variant-puzzler](https://github.com/ianfab/chess-variant-puzzler).
 
 Currently the following options are available:
@@ -74,4 +76,7 @@ Currently the following options are available:
 
 `data_format` - format of the puzzle data to use. Supported formats are `bin` (binary PackedSfenValue format) and `epd` (Extended Position Description, FEN strings). Default: `epd`.
 
-`seed` - seed for the PRNG. Can be either a number or a string. If it's a string then its hash will be used. If not specified then the current time will be used.
+`seed` - numeric or textual seed. It is resolved once and printed as the
+replayable decimal `PRNG::initial_seed`. Identical inputs/options with
+`Threads=1` reproduce byte-identical output; multi-thread record ordering is not
+defined.

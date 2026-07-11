@@ -49,6 +49,13 @@ namespace Eval {
       Pure
     };
 
+    constexpr UseNNUEMode use_nnue_mode_for_variant_network(
+      UseNNUEMode requestedMode,
+      bool matchesVariant)
+    {
+      return matchesVariant ? requestedMode : UseNNUEMode::False;
+    }
+
     extern UseNNUEMode useNNUE;
     extern std::string eval_file_loaded;
 

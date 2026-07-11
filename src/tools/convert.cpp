@@ -1,5 +1,6 @@
 #include "convert.h"
 
+#include "output_file.h"
 #include "uci.h"
 #include "misc.h"
 #include "thread.h"
@@ -21,6 +22,7 @@
 #include <limits>
 #include <optional>
 #include <chrono>
+#include <cstdlib>
 #include <random>
 #include <regex>
 #include <filesystem>
@@ -30,19 +32,61 @@ namespace sys = std::filesystem;
 
 namespace Stockfish::Tools
 {
+    [[noreturn]] static void conversion_error(const std::string& message)
+    {
+        std::cerr << "ERROR: " << message << '\n';
+        std::exit(EXIT_FAILURE);
+    }
+
+    static bool input_files_are_readable(const vector<string>& filenames, const char* command)
+    {
+        if (filenames.empty())
+            conversion_error(std::string(command) + " requires at least one input file.");
+
+        for (const auto& filename : filenames)
+        {
+            std::ifstream input(filename, std::ios::binary);
+            if (!input)
+                conversion_error("Cannot open input file '" + filename + "'.");
+        }
+        return true;
+    }
+
+    static bool legacy_bin_inputs_are_well_sized(const vector<string>& filenames)
+    {
+        for (const auto& filename : filenames)
+        {
+            std::error_code error;
+            const auto size = sys::file_size(filename, error);
+            if (error || size == 0 || size % sizeof(PackedSfenValue) != 0)
+                conversion_error("Legacy bin input '" + filename
+                                 + "' is truncated or unreadable.");
+        }
+        return true;
+    }
+
+    static void require_legacy_non_chess960()
+    {
+        if (Options["UCI_Chess960"])
+            conversion_error("Legacy v1 data cannot represent Chess960 castling state.");
+    }
+
     bool fen_is_ok(Position& pos, std::string input_fen) {
         std::string pos_fen = pos.fen();
         std::istringstream ss_input(input_fen);
         std::istringstream ss_pos(pos_fen);
 
-        // example : "2r4r/4kpp1/nb1np3/p2p3p/B2P1BP1/PP6/4NPKP/2R1R3 w - h6 0 24"
-        //       --> "2r4r/4kpp1/nb1np3/p2p3p/B2P1BP1/PP6/4NPKP/2R1R3"
         std::string str_input, str_pos;
-        ss_input >> str_input;
-        ss_pos >> str_pos;
 
-        // Only compare "Piece placement field" between input_fen and pos.fen().
-        return str_input == str_pos;
+        // Compare the four rule-relevant FEN fields. Clocks can be normalized
+        // independently, but board, side, castling, and en-passant must survive
+        // parsing unchanged.
+        for (int field = 0; field < 4; ++field)
+        {
+            if (!(ss_input >> str_input) || !(ss_pos >> str_pos) || str_input != str_pos)
+                return false;
+        }
+        return true;
     }
 
     void convert_bin(
@@ -58,35 +102,64 @@ namespace Stockfish::Tools
         const bool check_invalid_fen,
         const bool check_illegal_move)
     {
+        require_legacy_non_chess960();
         std::cout << "check_invalid_fen=" << check_invalid_fen << std::endl;
         std::cout << "check_illegal_move=" << check_illegal_move << std::endl;
 
+        if (!input_files_are_readable(filenames, "convert_bin"))
+            return;
+        if (ply_minimum < 0 || ply_maximum < ply_minimum
+            || ply_maximum > std::numeric_limits<std::uint16_t>::max())
+            conversion_error("Invalid ply range for the legacy 16-bit field.");
+        if (!std::isfinite(src_score_min_value) || !std::isfinite(src_score_max_value)
+            || !std::isfinite(dest_score_min_value) || !std::isfinite(dest_score_max_value))
+            conversion_error("Score scaling bounds must be finite.");
+        if (src_score_min_value == src_score_max_value)
+            conversion_error("src_score_min_value and src_score_max_value must differ.");
+
         std::fstream fs;
         uint64_t data_size = 0;
+        uint64_t total_data_size = 0;
         uint64_t filtered_size = 0;
         uint64_t filtered_size_fen = 0;
         uint64_t filtered_size_move = 0;
         uint64_t filtered_size_ply = 0;
+        uint64_t filtered_size_record = 0;
         auto th = Threads.main();
         auto& tpos = th->rootPos;
         // convert plain rag to packed sfenvalue for Yaneura king
-        fs.open(output_file_name, ios::app | ios::binary);
+        open_new_output_file_or_exit(fs, output_file_name, ios::binary);
         StateListPtr states;
         for (auto filename : filenames) {
             std::cout << "convert " << filename << " ... ";
             std::string line;
             ifstream ifs;
             ifs.open(filename);
-            PackedSfenValue p;
+            PackedSfenValue p{};
             data_size = 0;
             filtered_size = 0;
             filtered_size_fen = 0;
             filtered_size_move = 0;
             filtered_size_ply = 0;
-            p.gamePly = 1; // Not included in apery format. Should be initialized
             bool ignore_flag_fen = false;
             bool ignore_flag_move = false;
             bool ignore_flag_ply = false;
+            bool ignore_flag_record = false;
+            bool has_fen = false;
+            bool has_move = false;
+            bool record_started = false;
+            auto reset_record = [&]() {
+                p = PackedSfenValue{};
+                p.gamePly = 1; // Not included in apery format. Should be initialized
+                ignore_flag_fen = false;
+                ignore_flag_move = false;
+                ignore_flag_ply = false;
+                ignore_flag_record = false;
+                has_fen = false;
+                has_move = false;
+                record_started = false;
+            };
+            reset_record();
             const Variant* v = variants.find(Options["UCI_Variant"])->second;
             while (std::getline(ifs, line)) {
                 std::stringstream ss(line);
@@ -94,10 +167,32 @@ namespace Stockfish::Tools
                 std::string value;
                 ss >> token;
                 if (token == "fen") {
+                    if (record_started)
+                    {
+                        ++filtered_size;
+                        ++filtered_size_record;
+                    }
+                    // A FEN starts a new record. Reset all fields so malformed
+                    // or incomplete input cannot inherit data from its predecessor.
+                    reset_record();
+                    record_started = true;
+                    const std::size_t fen_start = line.find_first_not_of(
+                      " \t", line.find(token) + token.size());
+                    if (fen_start == std::string::npos)
+                    {
+                        ignore_flag_fen = true;
+                        ++filtered_size_fen;
+                        continue;
+                    }
+                    has_fen = true;
                     states = StateListPtr(new std::deque<StateInfo>(1)); // Drop old and create a new one
-                    std::string input_fen = line.substr(4);
+                    std::string input_fen = line.substr(fen_start);
                     tpos.set(v, input_fen, false, &states->back(), Threads.main());
-                    if (check_invalid_fen && !fen_is_ok(tpos, input_fen)) {
+                    const bool missing_nnue_king = tpos.nnue_king()
+                        && (tpos.count(WHITE, tpos.nnue_king()) != 1
+                            || tpos.count(BLACK, tpos.nnue_king()) != 1);
+                    if (missing_nnue_king
+                        || (check_invalid_fen && !fen_is_ok(tpos, input_fen))) {
                         ignore_flag_fen = true;
                         filtered_size_fen++;
                     }
@@ -106,68 +201,126 @@ namespace Stockfish::Tools
                     }
                 }
                 else if (token == "move") {
+                    record_started = true;
                     ss >> value;
-                    Move move = UCI::to_move(tpos, value);
-                    if (check_illegal_move && move == MOVE_NONE) {
+                    Move move = has_fen ? UCI::to_move(tpos, value) : MOVE_NONE;
+                    std::uint16_t encoded = 0;
+                    const char* encoding_reason = nullptr;
+                    if (move == MOVE_NONE
+                        || !try_encode_legacy_move(move, encoded, &encoding_reason)) {
                         ignore_flag_move = true;
                         filtered_size_move++;
                     }
                     else {
-                        p.move = move;
+                        p.move = encoded;
+                        has_move = true;
                     }
                 }
                 else if (token == "score") {
-                    double score;
-                    ss >> score;
+                    record_started = true;
+                    double score = 0;
+                    if (!(ss >> score) || !std::isfinite(score))
+                    {
+                        ignore_flag_record = true;
+                        ++filtered_size_record;
+                        continue;
+                    }
                     // Training Formula ?Issue #71 ?nodchip/Stockfish https://github.com/nodchip/Stockfish/issues/71
                     // Normalize to [0.0, 1.0].
                     score = (score - src_score_min_value) / (src_score_max_value - src_score_min_value);
                     // Scale to [dest_score_min_value, dest_score_max_value].
                     score = score * (dest_score_max_value - dest_score_min_value) + dest_score_min_value;
-                    p.score = std::clamp((int32_t)std::round(score), -(int32_t)VALUE_MATE, (int32_t)VALUE_MATE);
+                    score = std::clamp(
+                      score,
+                      static_cast<double>(std::numeric_limits<std::int16_t>::min()),
+                      static_cast<double>(std::numeric_limits<std::int16_t>::max()));
+                    p.score = static_cast<std::int16_t>(std::round(score));
                 }
                 else if (token == "ply") {
-                    int temp;
-                    ss >> temp;
-                    if (temp < ply_minimum || temp > ply_maximum) {
+                    record_started = true;
+                    int64_t temp = 0;
+                    if (!(ss >> temp)
+                        || temp < ply_minimum || temp > ply_maximum
+                        || temp < 0
+                        || temp > std::numeric_limits<std::uint16_t>::max()) {
                         ignore_flag_ply = true;
                         filtered_size_ply++;
                     }
-                    p.gamePly = uint16_t(temp); // No cast here?
-                    if (interpolate_eval != 0) {
-                        p.score = min(3000, interpolate_eval * temp);
+                    else {
+                        p.gamePly = static_cast<uint16_t>(temp);
+                    }
+                    if (!ignore_flag_ply && interpolate_eval != 0) {
+                        const int64_t interpolated = int64_t(interpolate_eval) * temp;
+                        p.score = static_cast<std::int16_t>(std::clamp<int64_t>(
+                          interpolated,
+                          std::numeric_limits<std::int16_t>::min(),
+                          3000));
                     }
                 }
                 else if (token == "result") {
-                    int temp;
-                    ss >> temp;
-                    p.game_result = int8_t(temp); // Do you need a cast here?
-                    if (interpolate_eval) {
-                        p.score = p.score * p.game_result;
+                    record_started = true;
+                    int temp = 0;
+                    if (!(ss >> temp) || temp < -1 || temp > 1)
+                    {
+                        ignore_flag_record = true;
+                        ++filtered_size_record;
+                    }
+                    else
+                    {
+                        p.game_result = static_cast<int8_t>(temp);
+                        if (interpolate_eval)
+                            p.score = static_cast<std::int16_t>(p.score * p.game_result);
                     }
                 }
                 else if (token == "e") {
-                    if (!(ignore_flag_fen || ignore_flag_move || ignore_flag_ply)) {
+                    if (!(ignore_flag_fen || ignore_flag_move || ignore_flag_ply
+                          || ignore_flag_record || !has_fen || !has_move)) {
                         fs.write((char*)&p, sizeof(PackedSfenValue));
+                        if (!fs)
+                            output_file_error(output_file_name, "write failed");
                         data_size += 1;
+                        total_data_size += 1;
                         // debug
                         // std::cout<<tpos<<std::endl;
                         // std::cout<<p.score<<","<<int(p.gamePly)<<","<<int(p.game_result)<<std::endl;
                     }
                     else {
                         filtered_size++;
+                        if (!has_fen || !has_move)
+                            ++filtered_size_record;
                     }
-                    ignore_flag_fen = false;
-                    ignore_flag_move = false;
-                    ignore_flag_ply = false;
+                    reset_record();
+                }
+                else if (!token.empty())
+                {
+                    record_started = true;
+                    ignore_flag_record = true;
+                    ++filtered_size_record;
                 }
             }
+            if (record_started)
+            {
+                ++filtered_size;
+                ++filtered_size_record;
+            }
             std::cout << "done " << data_size << " parsed " << filtered_size << " is filtered"
-                << " (invalid fen:" << filtered_size_fen << ", illegal move:" << filtered_size_move << ", invalid ply:" << filtered_size_ply << ")" << std::endl;
+                << " (invalid fen:" << filtered_size_fen << ", illegal/unrepresentable move:"
+                << filtered_size_move << ", invalid ply:" << filtered_size_ply
+                << ", malformed/incomplete record:" << filtered_size_record << ")" << std::endl;
             ifs.close();
         }
-        std::cout << "all done" << std::endl;
+        fs.flush();
+        if (!fs)
+            output_file_error(output_file_name, "write failed");
         fs.close();
+        if (!fs)
+            output_file_error(output_file_name, "close failed");
+        if (total_data_size == 0)
+        {
+            std::remove(output_file_name.c_str());
+            conversion_error("convert_bin produced no valid records.");
+        }
+        std::cout << "all done" << std::endl;
     }
 
     static inline void ltrim(std::string& s) {
@@ -261,14 +414,18 @@ namespace Stockfish::Tools
         const bool pgn_eval_side_to_move,
         const bool convert_no_eval_fens_as_score_zero)
     {
+        require_legacy_non_chess960();
         std::cout << "pgn_eval_side_to_move=" << pgn_eval_side_to_move << std::endl;
         std::cout << "convert_no_eval_fens_as_score_zero=" << convert_no_eval_fens_as_score_zero << std::endl;
+
+        if (!input_files_are_readable(filenames, "convert_bin_from_pgn_extract"))
+            return;
 
         auto th = Threads.main();
         auto& pos = th->rootPos;
 
         std::fstream ofs;
-        ofs.open(output_file_name, ios::out | ios::binary);
+        open_new_output_file_or_exit(ofs, output_file_name, ios::binary);
 
         int game_count = 0;
         int fen_count = 0;
@@ -364,7 +521,11 @@ namespace Stockfish::Tools
 #if defined(DEBUG_CONVERT_BIN_FROM_PGN_EXTRACT)
                             std::cout << "str_move=" << str_move << std::endl;
 #endif
-                            psv.move = UCI::to_move(pos, str_move);
+                            const Move move = UCI::to_move(pos, str_move);
+                            std::uint16_t encoded = 0;
+                            if (!try_encode_legacy_move(move, encoded))
+                                break;
+                            psv.move = encoded;
                         }
 
                         // eval
@@ -427,7 +588,8 @@ namespace Stockfish::Tools
                         }
 
                         // write
-                        if (eval_found || convert_no_eval_fens_as_score_zero) {
+                        if ((eval_found || convert_no_eval_fens_as_score_zero)
+                            && gamePly <= std::numeric_limits<std::uint16_t>::max()) {
                             if (!eval_found && convert_no_eval_fens_as_score_zero) {
                                 psv.score = 0;
                             }
@@ -443,6 +605,8 @@ namespace Stockfish::Tools
                             }
 
                             ofs.write((char*)&psv, sizeof(PackedSfenValue));
+                            if (!ofs)
+                                output_file_error(output_file_name, "write failed");
 
                             fen_count++;
                         }
@@ -454,17 +618,32 @@ namespace Stockfish::Tools
         }
 
         std::cout << now_string() << " game_count=" << game_count << ", fen_count=" << fen_count << std::endl;
-        std::cout << now_string() << " all done" << std::endl;
+        ofs.flush();
+        if (!ofs)
+            output_file_error(output_file_name, "write failed");
         ofs.close();
+        if (!ofs)
+            output_file_error(output_file_name, "close failed");
+        if (fen_count == 0)
+        {
+            std::remove(output_file_name.c_str());
+            conversion_error("convert_bin_from_pgn_extract produced no valid records.");
+        }
+        std::cout << now_string() << " all done" << std::endl;
     }
 
     void convert_plain(
         const vector<string>& filenames,
         const string& output_file_name)
     {
+        require_legacy_non_chess960();
+        if (!input_files_are_readable(filenames, "convert_plain")
+            || !legacy_bin_inputs_are_well_sized(filenames))
+            return;
+
         Position tpos;
         std::ofstream ofs;
-        ofs.open(output_file_name, ios::app);
+        open_new_output_file_or_exit(ofs, output_file_name, ios::out);
         auto th = Threads.main();
         for (auto filename : filenames) {
             std::cout << "convert " << filename << " ... ";
@@ -472,7 +651,7 @@ namespace Stockfish::Tools
             // Just convert packedsfenvalue to text
             std::fstream fs;
             fs.open(filename, ios::in | ios::binary);
-            PackedSfenValue p;
+            PackedSfenValue p{};
             while (true)
             {
                 if (fs.read((char*)&p, sizeof(PackedSfenValue))) {
@@ -481,7 +660,7 @@ namespace Stockfish::Tools
 
                     // write as plain text
                     ofs << "fen " << tpos.fen() << std::endl;
-                    ofs << "move " << UCI::move(tpos, Move(p.move)) << std::endl;
+                    ofs << "move " << UCI::move(tpos, decode_legacy_move(p.move)) << std::endl;
                     ofs << "score " << p.score << std::endl;
                     ofs << "ply " << int(p.gamePly) << std::endl;
                     ofs << "result " << int(p.game_result) << std::endl;
@@ -494,7 +673,12 @@ namespace Stockfish::Tools
             fs.close();
             std::cout << "done" << std::endl;
         }
+        ofs.flush();
+        if (!ofs)
+            output_file_error(output_file_name, "write failed");
         ofs.close();
+        if (!ofs)
+            output_file_error(output_file_name, "close failed");
         std::cout << "all done" << std::endl;
     }
 
@@ -502,9 +686,14 @@ namespace Stockfish::Tools
         const vector<string>& filenames,
         const string& output_file_name)
     {
+        require_legacy_non_chess960();
+        if (!input_files_are_readable(filenames, "convert_epd")
+            || !legacy_bin_inputs_are_well_sized(filenames))
+            return;
+
         Position tpos;
         std::ofstream ofs;
-        ofs.open(output_file_name, ios::app);
+        open_new_output_file_or_exit(ofs, output_file_name, ios::out);
         auto th = Threads.main();
         for (auto filename : filenames) {
             std::cout << "convert " << filename << " ... ";
@@ -512,7 +701,7 @@ namespace Stockfish::Tools
             // Convert packedsfenvalue to EPD format (FEN only)
             std::fstream fs;
             fs.open(filename, ios::in | ios::binary);
-            PackedSfenValue p;
+            PackedSfenValue p{};
             while (true)
             {
                 if (fs.read((char*)&p, sizeof(PackedSfenValue))) {
@@ -529,7 +718,12 @@ namespace Stockfish::Tools
             fs.close();
             std::cout << "done" << std::endl;
         }
+        ofs.flush();
+        if (!ofs)
+            output_file_error(output_file_name, "write failed");
         ofs.close();
+        if (!ofs)
+            output_file_error(output_file_name, "close failed");
         std::cout << "all done" << std::endl;
     }
 
@@ -601,7 +795,7 @@ namespace Stockfish::Tools
             else if (option == "output_file_name") is >> output_file_name;
             else
             {
-                cout << "Unknown option: " << option << ". Ignoring.\n";
+                conversion_error("Unknown convert_bin_from_pgn_extract option: " + option);
             }
         }
 
@@ -629,10 +823,10 @@ namespace Stockfish::Tools
         string target_dir;
 
         int ply_minimum = 0;
-        int ply_maximum = 114514;
+        int ply_maximum = std::numeric_limits<std::uint16_t>::max();
         bool interpolate_eval = 0;
-        bool check_invalid_fen = false;
-        bool check_illegal_move = false;
+        bool check_invalid_fen = true;
+        bool check_illegal_move = true;
 
         bool pgn_eval_side_to_move = false;
         bool convert_no_eval_fens_as_score_zero = false;
@@ -676,7 +870,7 @@ namespace Stockfish::Tools
             else if (option == "output_file_name") is >> output_file_name;
             else
             {
-                cout << "Unknown option: " << option << ". Ignoring.\n";
+                conversion_error("Unknown convert_bin option: " + option);
             }
         }
 
@@ -734,7 +928,7 @@ namespace Stockfish::Tools
             else if (option == "output_file_name") is >> output_file_name;
             else
             {
-                cout << "Unknown option: " << option << ". Ignoring.\n";
+                conversion_error("Unknown convert_plain option: " + option);
             }
         }
 
@@ -780,7 +974,7 @@ namespace Stockfish::Tools
             else if (option == "output_file_name") is >> output_file_name;
             else
             {
-                cout << "Unknown option: " << option << ". Ignoring.\n";
+                conversion_error("Unknown convert_epd option: " + option);
             }
         }
 

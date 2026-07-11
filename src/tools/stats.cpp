@@ -1,5 +1,7 @@
 #include "stats.h"
 
+#include "output_file.h"
+
 #include "sfen_stream.h"
 #include "packed_sfen.h"
 #include "sfen_writer.h"
@@ -8,6 +10,7 @@
 #include "position.h"
 #include "evaluate.h"
 #include "search.h"
+#include "uci.h"
 
 #include "nnue/evaluate_nnue.h"
 
@@ -19,6 +22,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <sstream>
 #include <iomanip>
 #include <limits>
@@ -1216,7 +1220,7 @@ namespace Stockfish::Tools::Stats
 
             pos.set_from_packed_sfen(psv.sfen, &si, th);
 
-            on_entry(pos, (Move)psv.move, psv);
+            on_entry(pos, decode_legacy_move(psv.move), psv);
 
             num_processed += 1;
             if (num_processed % 1'000'000 == 0)
@@ -1232,13 +1236,22 @@ namespace Stockfish::Tools::Stats
         std::cout << output_str;
         if (output_filename.has_value())
         {
-            std::ofstream out_file(*output_filename);
+            std::ofstream out_file;
+            open_new_output_file_or_exit(out_file, *output_filename, std::ios::out);
             out_file << output_str;
+            out_file.flush();
+            if (!out_file)
+                output_file_error(*output_filename, "write failed");
         }
     }
 
     void gather_statistics(std::istringstream& is)
     {
+        if (Options["UCI_Chess960"])
+        {
+            std::cerr << "ERROR: Legacy v1 data cannot represent Chess960 castling state.\n";
+            std::exit(EXIT_FAILURE);
+        }
         Eval::NNUE::init();
 
         auto& registry = get_statistics_gatherers_registry();

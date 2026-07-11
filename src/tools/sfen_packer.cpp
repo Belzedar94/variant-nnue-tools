@@ -355,6 +355,11 @@ namespace Stockfish::Tools {
         // Castling availability.
         // TODO(someone): Support chess960.
         pos.st->castlingRights = 0;
+        for (Color color : {WHITE, BLACK})
+        {
+            const Bitboard kings = pos.pieces(color, pos.castling_king_piece(color));
+            pos.st->castlingKingSquare[color] = kings ? lsb(kings) : SQ_NONE;
+        }
         if (stream.read_one_bit()) {
             Square rsq;
             for (rsq = relative_square(WHITE, SQ_H1); pos.piece_on(rsq) != W_ROOK; --rsq) {}
