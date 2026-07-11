@@ -123,6 +123,10 @@ def main():
         filtered_binary = root / "filtered.bin"
         stats_output = root / "stats.txt"
         pure_generated = root / "pure-generated.bin"
+        standard_ep_plain = root / "standard-ep.plain"
+        standard_ep_binary = root / "standard-ep.bin"
+        inconsistent_ep_plain = root / "inconsistent-ep.plain"
+        inconsistent_ep_binary = root / "inconsistent-ep.bin"
 
         # The second record deliberately omits score/ply/result. It must receive
         # the format defaults rather than inheriting values from the first one.
@@ -347,6 +351,47 @@ e
         if "malformed/incomplete record" not in filter_output:
             raise AssertionError("converter did not report malformed record filtering")
         run_engine(engine, "validate_training_data {}".format(filtered_binary))
+
+        standard_ep_plain.write_text(
+            """fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1
+move e7e5
+score 0
+ply 1
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {}".format(
+                standard_ep_plain, standard_ep_binary
+            ),
+        )
+        if standard_ep_binary.stat().st_size != RECORD_SIZE:
+            raise AssertionError(
+                "standard non-capturable en-passant FEN was filtered"
+            )
+        run_engine(engine, "validate_training_data {}".format(standard_ep_binary))
+
+        inconsistent_ep_plain.write_text(
+            standard_ep_plain.read_text(encoding="utf-8").replace(
+                " KQkq e3 ", " KQkq d3 "
+            ),
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {}".format(
+                inconsistent_ep_plain, inconsistent_ep_binary
+            ),
+            expect_success=False,
+            failure_text="produced no valid records",
+        )
+        if inconsistent_ep_binary.exists():
+            raise AssertionError("inconsistent en-passant FEN left an output file")
 
         stats_command = "gather_statistics position_count input_file {} output_file {}".format(
             binary, stats_output

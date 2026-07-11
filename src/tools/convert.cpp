@@ -12,6 +12,7 @@
 #include "syzygy/tbprobe.h"
 
 #include <sstream>
+#include <array>
 #include <fstream>
 #include <unordered_set>
 #include <iomanip>
@@ -71,22 +72,60 @@ namespace Stockfish::Tools
             conversion_error("Legacy v1 data cannot represent Chess960 castling state.");
     }
 
+    static bool standard_ep_target_is_consistent(
+        const Position& pos,
+        const std::string& side_to_move,
+        const std::string& ep_field)
+    {
+        if (ep_field.size() != 2
+            || ep_field[0] < 'a' || ep_field[0] > 'h'
+            || (side_to_move != "w" && side_to_move != "b"))
+            return false;
+
+        const Color us = side_to_move == "w" ? WHITE : BLACK;
+        const char expected_rank = us == WHITE ? '6' : '3';
+        if (ep_field[1] != expected_rank)
+            return false;
+
+        const Square target = make_square(
+            File(ep_field[0] - 'a'), Rank(ep_field[1] - '1'));
+        const Color moved_side = ~us;
+        const Direction push = pawn_push(moved_side);
+        const Square pawn_square = target + push;
+        const Square origin_square = target - push;
+        return pos.piece_on(target) == NO_PIECE
+            && pos.piece_on(pawn_square) == make_piece(moved_side, PAWN)
+            && pos.piece_on(origin_square) == NO_PIECE;
+    }
+
     bool fen_is_ok(Position& pos, std::string input_fen) {
         std::string pos_fen = pos.fen();
         std::istringstream ss_input(input_fen);
         std::istringstream ss_pos(pos_fen);
 
-        std::string str_input, str_pos;
+        std::array<std::string, 4> input_fields;
+        std::array<std::string, 4> normalized_fields;
 
-        // Compare the four rule-relevant FEN fields. Clocks can be normalized
-        // independently, but board, side, castling, and en-passant must survive
-        // parsing unchanged.
         for (int field = 0; field < 4; ++field)
         {
-            if (!(ss_input >> str_input) || !(ss_pos >> str_pos) || str_input != str_pos)
+            if (!(ss_input >> input_fields[field])
+                || !(ss_pos >> normalized_fields[field]))
                 return false;
         }
-        return true;
+
+        // Board, side, and castling must survive parsing exactly. Fairy emits
+        // X-FEN and therefore drops a standard-FEN en-passant target when no
+        // opposing pawn can capture. Accept only that normalization, and only
+        // when the double-pushed pawn, empty target, and empty origin make the
+        // standard target internally consistent.
+        for (int field = 0; field < 3; ++field)
+            if (input_fields[field] != normalized_fields[field])
+                return false;
+        if (input_fields[3] == normalized_fields[3])
+            return true;
+        return normalized_fields[3] == "-"
+            && standard_ep_target_is_consistent(
+                pos, input_fields[1], input_fields[3]);
     }
 
     void convert_bin(

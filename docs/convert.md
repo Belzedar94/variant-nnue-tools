@@ -31,7 +31,10 @@ convert_bin [options]
 - `output_file_name <output>` - Path to the output binary file (default: `shuffled_sfen.bin`)
 - `ply_minimum <n>` - Minimum ply number to include (default: 0)
 - `ply_maximum <n>` - Maximum ply number to include (default: 65535, the wire-field limit)
-- `check_invalid_fen <0|1>` - Filter out invalid FEN positions (default: 1)
+- `check_invalid_fen <0|1>` - Filter out invalid FEN positions (default: 1).
+  Standard-FEN en-passant targets that identify a consistent double pawn push
+  are accepted even when X-FEN normalization omits the target because no
+  opposing pawn can capture it.
 - `check_illegal_move <0|1>` - Filter out illegal moves (default: 1)
 - `interpolate_eval <n>` - Interpolate evaluation scores (default: 0)
 - `src_score_min_value <n>` - Minimum value in source score range (default: 0.0)
