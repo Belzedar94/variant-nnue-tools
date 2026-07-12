@@ -72,8 +72,10 @@ class CheckedBitReader
 
 bool packed_shape_is_safe(const PackedSfen& packed,
                           const Variant& variant,
-                          std::string& reason)
+                          std::string& reason,
+                          Bitboard& reconstructed_ep_squares)
 {
+    reconstructed_ep_squares = 0;
     if (DATA_SIZE != 512 || variant.maxFile != FILE_H || variant.maxRank != RANK_8)
     {
         reason = "the historical v1 validator supports only 512-bit 8x8 positions";
@@ -219,12 +221,12 @@ bool packed_shape_is_safe(const PackedSfen& packed,
             reason = "invalid en-passant square";
             return false;
         }
-        const Square target = Square(value);
-        // set_from_packed_sfen() preserves the encoded target verbatim, so a
-        // canonical re-pack alone cannot prove that it belongs to the selected
-        // variant or is empty.
-        if (!(variant.enPassantRegion[side_to_move] & target)
-            || board[target].type != NO_PIECE_TYPE)
+        const Square marker = Square(value);
+        // Legacy v1 stores lsb(epSquares). For orthodox pawns this is the empty
+        // target. Custom initial moves also mark the occupied destination, so
+        // after a move towards lower square indices the stored marker can be
+        // that destination instead. Reconstruct the unique complete set below.
+        if (!(variant.enPassantRegion[side_to_move] & marker))
         {
             reason = "en-passant square is inconsistent with the selected variant";
             return false;
@@ -235,14 +237,14 @@ bool packed_shape_is_safe(const PackedSfen& packed,
         // etc.) create it on squares between an initial-only origin/destination.
         const Color moved_side = ~side_to_move;
         const Direction push = pawn_push(moved_side);
-        if (variant.fastAttacks)
+        if (variant.fastAttacks && board[marker].type == NO_PIECE_TYPE)
         {
             Bitboard pawn_capturers = 0;
             for (Square square = SQ_A1; square <= SQ_H8; ++square)
                 if (board[square].type == PAWN
                     && board[square].color == side_to_move)
                     pawn_capturers |= square;
-            if (!(pawn_attacks_bb(moved_side, target) & pawn_capturers)
+            if (!(pawn_attacks_bb(moved_side, marker) & pawn_capturers)
                 && !(variant.enPassantTypes[side_to_move] & ~piece_set(PAWN)))
             {
                 reason = "en-passant square has no eligible capturer";
@@ -254,12 +256,15 @@ bool packed_shape_is_safe(const PackedSfen& packed,
             return board[origin].type == NO_PIECE_TYPE
                 || (variant.gating && board[origin].color == moved_side);
         };
-        bool has_provenance = false;
+        bool has_standard_provenance = false;
 
         // Keep the common standard-pawn path linear in board size. Dataset
         // validators routinely scan millions of positions, so only enter the
-        // more general Betza search when no pawn push explains the target.
-        for (Square origin = SQ_A1; origin <= SQ_H8 && !has_provenance; ++origin)
+        // more general Betza search after checking the orthodox representation.
+        for (Square origin = SQ_A1;
+             origin <= SQ_H8 && !has_standard_provenance
+             && board[marker].type == NO_PIECE_TYPE;
+             ++origin)
         {
             if (!origin_is_available(origin))
                 continue;
@@ -272,26 +277,33 @@ bool packed_shape_is_safe(const PackedSfen& packed,
             {
                 const Square one = Square(one_index);
                 const Square destination = Square(two_index);
-                has_provenance = target == one
-                              && board[one].type == NO_PIECE_TYPE
-                              && board[destination].type == PAWN
-                              && board[destination].color == moved_side;
+                has_standard_provenance = marker == one
+                                       && board[one].type == NO_PIECE_TYPE
+                                       && board[destination].type == PAWN
+                                       && board[destination].color == moved_side;
             }
-            if (!has_provenance && (variant.tripleStepRegion[moved_side] & origin)
+            if (!has_standard_provenance
+                && (variant.tripleStepRegion[moved_side] & origin)
                 && three_index >= int(SQ_A1) && three_index <= int(SQ_H8))
             {
                 const Square one = Square(one_index);
                 const Square two = Square(two_index);
                 const Square destination = Square(three_index);
-                has_provenance = (target == one || target == two)
-                              && board[one].type == NO_PIECE_TYPE
-                              && board[two].type == NO_PIECE_TYPE
-                              && board[destination].type == PAWN
-                              && board[destination].color == moved_side;
+                has_standard_provenance = (marker == one || marker == two)
+                                       && board[one].type == NO_PIECE_TYPE
+                                       && board[two].type == NO_PIECE_TYPE
+                                       && board[destination].type == PAWN
+                                       && board[destination].color == moved_side;
             }
         }
 
-        if (!has_provenance)
+        Bitboard candidate_ep_squares = has_standard_provenance
+                                      ? square_bb(marker) : Bitboard(0);
+        bool ambiguous_provenance = false;
+
+        // Reconstruct custom initial moves even if an orthodox explanation was
+        // found. If both produce different EP sets, v1 does not contain enough
+        // information to choose safely.
         {
             std::array<Bitboard, PIECE_TYPE_NB> destinations_by_type{};
             Bitboard occupied = 0;
@@ -306,14 +318,14 @@ bool packed_shape_is_safe(const PackedSfen& packed,
                 destinations_by_type[occupant.type] |= destination;
             }
 
-            for (Square origin = SQ_A1; origin <= SQ_H8 && !has_provenance; ++origin)
+            for (Square origin = SQ_A1; origin <= SQ_H8; ++origin)
             {
                 if (!origin_is_available(origin))
                     continue;
                 if (!(variant.doubleStepRegion[moved_side] & origin))
                     continue;
                 for (PieceSet types = variant.pieceTypes & ~piece_set(PAWN);
-                     types && !has_provenance;)
+                     types;)
                 {
                     const PieceType type = pop_lsb(types);
                     const PieceType move_type = type == KING ? variant.kingType : type;
@@ -321,7 +333,7 @@ bool packed_shape_is_safe(const PackedSfen& packed,
                                                 ? variant.mobilityRegion[moved_side][type]
                                                 : AllSquares;
                     Bitboard destinations = destinations_by_type[type] & mobility;
-                    while (destinations && !has_provenance)
+                    while (destinations)
                     {
                         const Square destination = pop_lsb(destinations);
                         const Bitboard previous_quiet_occupied =
@@ -335,18 +347,39 @@ bool packed_shape_is_safe(const PackedSfen& packed,
                                          previous_quiet_occupied)
                           | attacks_bb(moved_side, move_type, origin,
                                        previous_capture_occupied);
-                        has_provenance = (initial_geometry & possible_destinations
-                                          & destination)
-                                      && (between_bb(origin, destination) & target);
+                        if (!(initial_geometry & possible_destinations & destination))
+                            continue;
+
+                        const Bitboard ep_squares = between_bb(origin, destination)
+                                                  & variant.enPassantRegion[side_to_move];
+                        if (!ep_squares || lsb(ep_squares) != marker
+                            || !(ep_squares & destination)
+                            || !(ep_squares & ~occupied))
+                            continue;
+                        if (board[marker].type != NO_PIECE_TYPE
+                            && marker != destination)
+                            continue;
+
+                        if (!candidate_ep_squares)
+                            candidate_ep_squares = ep_squares;
+                        else if (candidate_ep_squares != ep_squares)
+                            ambiguous_provenance = true;
                     }
                 }
             }
         }
-        if (!has_provenance)
+        if (ambiguous_provenance)
+        {
+            reason = "en-passant provenance has multiple states that legacy v1"
+                     " cannot distinguish";
+            return false;
+        }
+        if (!candidate_ep_squares)
         {
             reason = "en-passant square has no possible initial-move provenance";
             return false;
         }
+        reconstructed_ep_squares = candidate_ep_squares;
     }
 
     for (unsigned bits : {6U, 8U, 8U, 1U})
@@ -375,7 +408,7 @@ bool move_is_legal(const Position& position, Move move)
 
 void validate_bin(const std::string& path)
 {
-    if (Options["UCI_Chess960"])
+    if (legacy_v1_chess960_selected())
         validation_error(path, "legacy v1 data cannot represent Chess960 castling state");
     if (sizeof(PackedSfenValue) != 72)
         validation_error(path, "this build does not implement the 72-byte legacy v1 layout");
@@ -412,11 +445,18 @@ void validate_bin(const std::string& path)
             validation_error(path, "game result is outside -1, 0, 1", count);
 
         std::string shape_error;
-        if (!packed_shape_is_safe(record.sfen, variant, shape_error))
+        Bitboard reconstructed_ep_squares = 0;
+        if (!packed_shape_is_safe(record.sfen, variant, shape_error,
+                                  reconstructed_ep_squares))
             validation_error(path, shape_error, count);
 
         if (position.set_from_packed_sfen(record.sfen, &state, thread) != 0)
             validation_error(path, "packed position could not be decoded", count);
+
+        // The historical wire stores only one EP square. For custom initial
+        // moves (for example Berolina), restore the unique complete EP-square
+        // set proven by the packed board before asking for legal moves.
+        position.state()->epSquares = reconstructed_ep_squares;
 
         PackedSfen canonical{};
         position.sfen_pack(canonical);
@@ -452,7 +492,7 @@ void validate_bin(const std::string& path)
 
 void validate_plain(const std::string& path)
 {
-    if (Options["UCI_Chess960"])
+    if (legacy_v1_chess960_selected())
         validation_error(path, "legacy v1 data cannot represent Chess960 castling state");
 
     std::ifstream input(path);

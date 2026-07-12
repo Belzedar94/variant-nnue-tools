@@ -2,6 +2,7 @@
 
 #include "fen_validation.h"
 #include "output_file.h"
+#include "packed_sfen.h"
 #include "uci.h"
 #include "misc.h"
 #include "thread.h"
@@ -69,7 +70,7 @@ namespace Stockfish::Tools
 
     static void require_legacy_non_chess960()
     {
-        if (Options["UCI_Chess960"])
+        if (legacy_v1_chess960_selected())
             conversion_error("Legacy v1 data cannot represent Chess960 castling state.");
     }
 

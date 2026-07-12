@@ -11,7 +11,8 @@ are never truncated, overwritten, or appended to. Binary input sizes and all
 plain records are checked before data is accepted.
 
 The historical format cannot encode Chess960 rook origins, so conversion fails
-explicitly when `UCI_Chess960=true`.
+explicitly when `UCI_Chess960=true` or when the selected variant enables
+Chess960 intrinsically (for example, `fischerandom`).
 
 ## convert_bin
 

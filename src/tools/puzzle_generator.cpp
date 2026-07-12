@@ -925,7 +925,7 @@ namespace Stockfish::Tools
             cout << "ERROR: Invalid generate_puzzles parameter range.\n";
             std::exit(EXIT_FAILURE);
         }
-        if (Options["UCI_Chess960"])
+        if (legacy_v1_chess960_selected())
         {
             cout << "ERROR: Legacy v1 training data cannot represent Chess960 castling state.\n";
             std::exit(EXIT_FAILURE);

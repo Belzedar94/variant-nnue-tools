@@ -3,6 +3,8 @@
 `transform` command exposes subcommands that perform some specific transformation over data. The call syntax is `transform <subcommand>`. Currently implemented subcommands are listed and described below.
 
 All transform outputs use exclusive creation and reject an existing path.
+Because legacy v1 cannot preserve Chess960 rook origins, transforms reject both
+`UCI_Chess960=true` and variants that enable Chess960 intrinsically.
 
 ## `nudged_static`
 

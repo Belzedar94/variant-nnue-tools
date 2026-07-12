@@ -12,6 +12,11 @@
 
 namespace Stockfish::Tools {
 
+    // Legacy v1 stores only four castling-right bits. It cannot preserve the
+    // rook origins required by Chess960, whether Chess960 is enabled through
+    // the UCI option or by the selected variant itself.
+    bool legacy_v1_chess960_selected();
+
     [[noreturn]] inline void legacy_move_encoding_error(const char* reason)
     {
         std::fprintf(stderr, "Cannot encode legacy training-data move: %s\n", reason);

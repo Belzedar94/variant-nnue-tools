@@ -4,6 +4,7 @@
 
 #include "misc.h"
 #include "position.h"
+#include "variant.h"
 
 #include "uci.h"
 
@@ -14,6 +15,15 @@
 using namespace std;
 
 namespace Stockfish::Tools {
+
+    bool legacy_v1_chess960_selected()
+    {
+        const auto selected = variants.find(std::string(Options["UCI_Variant"]));
+        return Options["UCI_Chess960"]
+            || (selected != variants.end()
+                && selected->second
+                && selected->second->chess960);
+    }
 
     // Class that handles bitstream
     // useful when doing aspect encoding

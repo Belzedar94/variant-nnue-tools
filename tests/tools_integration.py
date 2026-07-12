@@ -190,6 +190,12 @@ def main():
         berolina_ep_binary = root / "berolina-ep.bin"
         berolina_no_ep_binary = root / "berolina-no-ep.bin"
         inconsistent_berolina_ep_binary = root / "inconsistent-berolina-ep.bin"
+        berolina_reverse_ep_plain = root / "berolina-reverse-ep.plain"
+        berolina_reverse_no_ep_plain = root / "berolina-reverse-no-ep.plain"
+        berolina_reverse_ep_binary = root / "berolina-reverse-ep.bin"
+        berolina_reverse_no_ep_binary = root / "berolina-reverse-no-ep.bin"
+        ambiguous_berolina_ep_plain = root / "ambiguous-berolina-ep.plain"
+        ambiguous_berolina_ep_binary = root / "ambiguous-berolina-ep.bin"
         disabled_ep_plain = root / "disabled-ep.plain"
         disabled_ep_binary = root / "disabled-ep.bin"
         illegal_move_plain = root / "illegal-move.plain"
@@ -562,8 +568,8 @@ e
         # pawn type. Its canonical record must not be forced through orthodox
         # vertical-pawn provenance checks.
         berolina_ep_plain.write_text(
-            """fen rnbqkbnr/ppp1pppp/8/8/2Pp4/8/PPPP1PPP/RNBQKBNR b KQkq d3 0 1
-move e8d7
+            """fen rnbqkbnr/ppp1pppp/8/8/2Pp4/8/PPPP1PPP/RNBQKBNR b KQkq d3c4 0 1
+move d4d3
 score 0
 ply 1
 result 0
@@ -574,8 +580,8 @@ e
         )
         berolina_no_ep_plain.write_text(
             berolina_ep_plain.read_text(encoding="utf-8").replace(
-                " b KQkq d3 ", " b KQkq - "
-            ),
+                " b KQkq d3c4 ", " b KQkq - "
+            ).replace("move d4d3", "move e8d7"),
             encoding="utf-8",
             newline="\n",
         )
@@ -620,6 +626,85 @@ e
             engine,
             inconsistent_berolina_ep_binary,
             "no possible initial-move provenance",
+            extra_commands=berolina_option,
+        )
+
+        # After a custom initial move towards lower square indices, legacy v1
+        # stores the occupied destination as lsb(epSquares), not the empty EP
+        # target. Reconstruct c5+d6 and validate the actual Berolina EP capture.
+        berolina_reverse_ep_plain.write_text(
+            """fen rnbqkbnr/pppp1ppp/8/2pP4/8/8/PPP1PPPP/RNBQKBNR w KQkq c5d6 0 2
+move d5d6
+score 0
+ply 2
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        berolina_reverse_no_ep_plain.write_text(
+            berolina_reverse_ep_plain.read_text(encoding="utf-8").replace(
+                " w KQkq c5d6 ", " w KQkq - "
+            ).replace("move d5d6", "move b1c3"),
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                berolina_reverse_ep_plain, berolina_reverse_ep_binary
+            ),
+            extra_commands=berolina_option,
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                berolina_reverse_no_ep_plain, berolina_reverse_no_ep_binary
+            ),
+            extra_commands=berolina_option,
+        )
+        run_engine(
+            engine,
+            "validate_training_data {}".format(berolina_reverse_ep_binary),
+            extra_commands=berolina_option,
+        )
+        run_engine(
+            engine,
+            "validate_training_data {}".format(berolina_reverse_no_ep_binary),
+            extra_commands=berolina_option,
+        )
+        discover_ep_flag(
+            berolina_reverse_ep_binary.read_bytes(),
+            berolina_reverse_no_ep_binary.read_bytes(),
+            "c5",
+        )
+
+        # The v1 wire stores only d3 for both e2-c4 and c2-e4. With both
+        # destinations occupied, the packed board cannot identify which custom
+        # initial move created the EP state and must be rejected conservatively.
+        ambiguous_berolina_ep_plain.write_text(
+            """fen rnbqkbnr/ppp1pppp/8/8/2PpP3/8/PP1P1PPP/RNBQKBNR b KQkq d3c4e4 0 1
+move d4d3
+score 0
+ply 1
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {}".format(
+                ambiguous_berolina_ep_plain, ambiguous_berolina_ep_binary
+            ),
+            extra_commands=berolina_option,
+        )
+        expect_validation_failure(
+            engine,
+            ambiguous_berolina_ep_binary,
+            "multiple states",
             extra_commands=berolina_option,
         )
 
@@ -793,6 +878,126 @@ e
         )
         if chess960_output.exists():
             raise AssertionError("legacy Chess960 configuration created an output file")
+
+        # The legacy position wire stores castling rights but not Chess960 rook
+        # origins. Exercise every public legacy-v1 entrypoint with Chess960
+        # enabled both explicitly and intrinsically by the selected variant.
+        legacy_inputs_before = {
+            plain: plain.read_bytes(),
+            exported_plain: exported_plain.read_bytes(),
+            binary: binary.read_bytes(),
+            empty_pgn: empty_pgn.read_bytes(),
+        }
+        chess960_configurations = {
+            "option": ["setoption name UCI_Chess960 value true"],
+            "variant": [
+                "setoption name UCI_Variant value fischerandom",
+                "setoption name UCI_Chess960 value false",
+            ],
+        }
+        for configuration_name, extra_commands in chess960_configurations.items():
+            rejected_outputs = {
+                name: root / "chess960-{}-{}{}".format(configuration_name, name, suffix)
+                for name, suffix in [
+                    ("convert-bin", ".bin"),
+                    ("convert-pgn", ".bin"),
+                    ("convert-plain", ".plain"),
+                    ("convert-epd", ".epd"),
+                    ("generate", ".bin"),
+                    ("generate-nonpv", ".bin"),
+                    ("puzzles", ".epd"),
+                    ("stats", ".txt"),
+                    ("nudged", ".bin"),
+                    ("rescore", ".bin"),
+                ]
+            }
+            rejected_commands = [
+                (
+                    "convert-bin",
+                    "convert_bin targetfile {} output_file_name {}".format(
+                        plain, rejected_outputs["convert-bin"]
+                    ),
+                ),
+                (
+                    "convert-pgn",
+                    "convert_bin_from_pgn_extract targetfile {} output_file_name {}".format(
+                        empty_pgn, rejected_outputs["convert-pgn"]
+                    ),
+                ),
+                (
+                    "convert-plain",
+                    "convert_plain targetfile {} output_file_name {}".format(
+                        binary, rejected_outputs["convert-plain"]
+                    ),
+                ),
+                (
+                    "convert-epd",
+                    "convert_epd targetfile {} output_file_name {}".format(
+                        binary, rejected_outputs["convert-epd"]
+                    ),
+                ),
+                ("validate-plain", "validate_training_data {}".format(exported_plain)),
+                ("validate-bin", "validate_training_data {}".format(binary)),
+                (
+                    "generate",
+                    "generate_training_data depth 1 count 1 output_file_name {} "
+                    "data_format bin seed tools-wire-test".format(
+                        rejected_outputs["generate"]
+                    ),
+                ),
+                (
+                    "generate-nonpv",
+                    "generate_training_data_nonpv count 1 output_file {} "
+                    "data_format bin seed tools-wire-test".format(
+                        rejected_outputs["generate-nonpv"]
+                    ),
+                ),
+                (
+                    "puzzles",
+                    "generate_puzzles count 1 output_file_name {}".format(
+                        rejected_outputs["puzzles"]
+                    ),
+                ),
+                (
+                    "stats",
+                    "gather_statistics position_count input_file {} output_file {}".format(
+                        binary, rejected_outputs["stats"]
+                    ),
+                ),
+                (
+                    "nudged",
+                    "transform nudged_static input_file {} output_file {}".format(
+                        binary, rejected_outputs["nudged"]
+                    ),
+                ),
+                (
+                    "rescore",
+                    "transform rescore input_file {} output_file {}".format(
+                        binary, rejected_outputs["rescore"]
+                    ),
+                ),
+            ]
+            for command_name, command in rejected_commands:
+                run_engine(
+                    engine,
+                    command,
+                    expect_success=False,
+                    failure_text="cannot represent Chess960 castling state",
+                    extra_commands=extra_commands,
+                )
+                output = rejected_outputs.get(command_name)
+                if output is not None and output.exists():
+                    raise AssertionError(
+                        "{} Chess960 configuration let {} create {}".format(
+                            configuration_name, command_name, output
+                        )
+                    )
+
+        for input_path, before in legacy_inputs_before.items():
+            if input_path.read_bytes() != before:
+                raise AssertionError(
+                    "rejected Chess960 commands modified input {}".format(input_path)
+                )
 
         invalid_scale_output = root / "invalid-scale.bin"
         run_engine(

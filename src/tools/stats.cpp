@@ -1247,7 +1247,7 @@ namespace Stockfish::Tools::Stats
 
     void gather_statistics(std::istringstream& is)
     {
-        if (Options["UCI_Chess960"])
+        if (legacy_v1_chess960_selected())
         {
             std::cerr << "ERROR: Legacy v1 data cannot represent Chess960 castling state.\n";
             std::exit(EXIT_FAILURE);

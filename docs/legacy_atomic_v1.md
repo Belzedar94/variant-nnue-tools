@@ -56,8 +56,9 @@ The format has no magic, version, byte order marker, schema hash, or record
 count. Therefore it must not be confused with the future `atomic-bin-v2`.
 
 The packed position also predates Chess960 rook-origin metadata. Legacy v1
-commands reject `UCI_Chess960=true` instead of silently emitting ambiguous
-castling state. Atomic960 dataset support therefore belongs in the versioned
+commands reject both `UCI_Chess960=true` and variants that enable Chess960
+intrinsically instead of silently emitting ambiguous castling state. Atomic960
+dataset support therefore belongs in the versioned
 successor format; this does not limit Atomic960 support in the playing engine.
 
 ## File and validation policy

@@ -20,7 +20,8 @@ validation_data_file="$instrumented_output_dir/validation_data.bin"
 cleanup()
 {
   rm -rf "$instrumented_output_dir"
-  rm -f game.exp syzygy.exp data_generation01.exp data_generation02.exp tsan.supp
+  rm -f game.exp syzygy.exp data_generation01.exp data_generation02.exp tsan.supp \
+    game.exp.log data_generation01.exp.log data_generation02.exp.log
 }
 
 trap cleanup EXIT
@@ -220,8 +221,18 @@ EOF
 for exp in game.exp data_generation01.exp data_generation02.exp
 do
 
-  echo "$prefix expect $exp $postfix"
-  eval "$prefix expect $exp $postfix"
+  if [ "$1" = "--valgrind" ] || [ "$1" = "--valgrind-thread" ]; then
+    echo "expect $exp (captured; printed on failure)"
+    if ! expect "$exp" > "$exp.log" 2>&1; then
+      cat "$exp.log"
+      rm -f "$exp.log"
+      false
+    fi
+    rm -f "$exp.log"
+  else
+    echo "$prefix expect $exp $postfix"
+    eval "$prefix expect $exp $postfix"
+  fi
 
   rm $exp
 
