@@ -168,9 +168,10 @@ struct Variant {
   bool fastAttacks2 = true;
   std::string nnueAlias = "";
   PieceType nnueKing = KING;
-  int pieceIndex[PIECE_TYPE_NB];
-  int nnueDimensions;
-  bool nnueUsePockets;
+    int pieceIndex[PIECE_TYPE_NB];
+    int nnueDimensions = 0;
+    int nnueWallIndexBase = -1;
+    bool nnueUsePockets = false;
   int pieceSquareIndex[COLOR_NB][PIECE_NB];
   int pieceHandIndex[COLOR_NB][PIECE_NB];
   int kingSquareIndex[SQUARE_NB];

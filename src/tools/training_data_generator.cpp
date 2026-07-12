@@ -323,8 +323,8 @@ namespace Stockfish::Tools
                 const int depth = params.search_depth_min + (int)prng.rand(params.search_depth_max - params.search_depth_min + 1);
 
                 // Starting search calls init_for_search
-                auto [eval_value, eval_pv] = Search::search(pos, pos.checkers() || pos.is_immediate_game_end() ? 0 : -1);
-                auto [qsearch_value, qsearch_pv] = Search::search(pos, 0);
+                Value eval_value = Search::search(pos, pos.checkers() || pos.is_immediate_game_end() ? 0 : -1).first;
+                Value qsearch_value = Search::search(pos, 0).first;
                 auto [search_value, search_pv] = Search::search(pos, depth, 1, params.nodes);
 
                 // This has to be performed after search because it needs to know
@@ -368,11 +368,13 @@ namespace Stockfish::Tools
 
                 // Filter for static positions using abs(qsearch_value - eval_value)
                 // sync_cout << pos.fen() << " | " << search_value << " | " << qsearch_value << " | " << eval_value << sync_endl;
+                const bool eval_diff_ok = params.eval_diff_limit < 0
+                                       || std::abs(qsearch_value - eval_value) <= params.eval_diff_limit;
                 if (ply >= params.write_minply && !was_seen_before(pos)
                     && !pos.checkers() && pos.nnue_applicable()
-                    && std::abs(qsearch_value - eval_value) <= params.eval_diff_limit
-                    && !(params.filter_captures && pos.capture(search_pv[0]))
-                    && !(params.filter_checks && pos.gives_check(search_pv[0]))
+                    && eval_diff_ok
+                    && !(params.filter_captures && pos.capture(search_pv[0]))   
+                    && !(params.filter_checks && pos.gives_check(search_pv[0])) 
                     && !(params.filter_promotions && (type_of(search_pv[0]) == PROMOTION || type_of(search_pv[0]) == PIECE_PROMOTION)))
                 {
                     auto& psv = packed_sfens.emplace_back();
