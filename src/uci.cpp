@@ -37,6 +37,7 @@
 #include "syzygy/tbprobe.h"
 
 #ifndef NO_NNUE_TOOLS
+#include "tools/atomic_data_schema.h"
 #include "tools/validate_training_data.h"
 #include "tools/training_data_generator.h"
 #include "tools/training_data_generator_nonpv.h"
@@ -579,6 +580,8 @@ void UCI::loop(int argc, char* argv[]) {
           position(pos, is, states);
       }
 #ifndef NO_NNUE_TOOLS
+      else if (token == "atomic_data_schema")
+          sync_cout << Tools::atomic_data_schema_json() << sync_endl;
       else if (token == "generate_training_data") Tools::generate_training_data(is);
       else if (token == "generate_training_data_nonpv") Tools::generate_training_data_nonpv(is);
       else if (token == "generate_puzzles") Tools::generate_puzzles(is);

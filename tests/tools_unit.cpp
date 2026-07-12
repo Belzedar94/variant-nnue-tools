@@ -1,4 +1,5 @@
 #include "evaluate.h"
+#include "tools/atomic_data_schema.h"
 #include "tools/packed_sfen.h"
 #include "tools/random_seed.h"
 #include "tools/sfen_stream.h"
@@ -10,6 +11,28 @@
 using namespace Stockfish;
 
 namespace {
+
+void test_atomic_data_schema_handshake()
+{
+    using namespace Stockfish::Tools;
+
+    assert(AtomicDataSchemaSha256
+           == "acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1");
+#if DATA_SIZE == 512
+    static_assert(LegacyAtomicV1Available);
+    static_assert(LegacyAtomicV1RecordSize == sizeof(PackedSfenValue));
+    assert(atomic_data_schema_json()
+           == "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
+              "\"formats\":{\"legacy-atomic-v1\":{\"read\":true,\"write\":true,"
+              "\"record_size\":72}}}");
+#else
+    static_assert(!LegacyAtomicV1Available);
+    static_assert(sizeof(PackedSfenValue) == 136);
+    assert(atomic_data_schema_json()
+           == "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
+              "\"formats\":{}}");
+#endif
+}
 
 void expect_legacy_move(Move move, std::uint16_t expected)
 {
@@ -101,8 +124,13 @@ void test_nnue_mode_is_preserved_after_variant_matching()
 
 int main()
 {
+#if DATA_SIZE == 512
     static_assert(sizeof(Stockfish::Tools::PackedSfenValue) == 72);
+#else
+    static_assert(sizeof(Stockfish::Tools::PackedSfenValue) == 136);
+#endif
 
+    test_atomic_data_schema_handshake();
     test_legacy_move_wire_format();
     test_unrepresentable_legacy_moves_are_rejected();
     test_epd_output_does_not_encode_unused_moves();

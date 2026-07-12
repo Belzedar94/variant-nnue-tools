@@ -2,9 +2,9 @@ name: Release
 
 on:
   push:
-    branches: [ master, tools ]
+    branches: [ master, tools, atomic ]
   pull_request:
-    branches: [ master, tools ]
+    branches: [ master, tools, atomic ]
 
 jobs:
   windows:
