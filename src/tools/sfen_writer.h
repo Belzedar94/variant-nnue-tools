@@ -27,9 +27,8 @@ namespace Stockfish::Tools {
         {
             sfen_buffers_pool.reserve((size_t)thread_num * 10);
             sfen_buffers.resize(thread_num);
-            periodic_flush_interval = std::chrono::minutes(1);
-            last_periodic_flush = std::chrono::steady_clock::now();
-
+            last_periodic_flush.assign(
+              thread_num, std::chrono::steady_clock::now());
             auto out = sync_region_cout.new_region();
             out << "INFO (sfen_writer): Creating new data file at " << filename_ << std::endl;
 
@@ -89,6 +88,20 @@ namespace Stockfish::Tools {
                 std::unique_lock<std::mutex> lk(mutex);
                 sfen_buffers_pool.emplace_back(std::move(buf));
             }
+
+            // Only the producer owning thread_id may touch its partial buffer.
+            // This restores periodic durability without racing the file worker.
+            flush_if_due(thread_id);
+        }
+
+        void flush_if_due(size_t thread_id)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_periodic_flush[thread_id] < periodic_flush_interval)
+                return;
+
+            flush(thread_id);
+            last_periodic_flush[thread_id] = now;
         }
 
         void flush()
@@ -116,23 +129,14 @@ namespace Stockfish::Tools {
         // Dedicated thread to write to file
         void file_write_worker()
         {
-            while (!finished || sfen_buffers_pool.size())
+            while (true)
             {
                 std::vector<std::unique_ptr<PSVector>> buffers;
                 {
                     std::unique_lock<std::mutex> lk(mutex);
 
-                    const auto now = std::chrono::steady_clock::now();
-                    if (now - last_periodic_flush >= periodic_flush_interval)
-                    {
-                        for (auto& buf : sfen_buffers)
-                        {
-                            if (buf && buf->size())
-                                sfen_buffers_pool.emplace_back(std::move(buf));
-                        }
-
-                        last_periodic_flush = now;
-                    }
+                    if (finished && sfen_buffers_pool.empty())
+                        break;
 
                     // Atomically swap take the filled buffers and
                     // create a new buffer pool for threads to fill.
@@ -163,9 +167,7 @@ namespace Stockfish::Tools {
                             // Sequential number attached to the file
                             int n = (int)(sfen_write_count / save_every);
 
-                            // Rename the file and open it again.
-                            // Add ios::app in consideration of overwriting.
-                            // (Depending on the operation, it may not be necessary.)
+                            // Rename the file and reserve a fresh output path.
                             std::string new_filename = filename + "_" + std::to_string(n);
                             output_file_stream = create_new_sfen_output(new_filename, sfen_format);
 
@@ -203,8 +205,9 @@ namespace Stockfish::Tools {
         std::vector<std::unique_ptr<PSVector>> sfen_buffers;
         std::vector<std::unique_ptr<PSVector>> sfen_buffers_pool;
 
-        std::chrono::steady_clock::duration periodic_flush_interval;
-        std::chrono::steady_clock::time_point last_periodic_flush;
+        const std::chrono::steady_clock::duration periodic_flush_interval =
+          std::chrono::minutes(1);
+        std::vector<std::chrono::steady_clock::time_point> last_periodic_flush;
 
         // Mutex required to access sfen_buffers_pool
         std::mutex mutex;

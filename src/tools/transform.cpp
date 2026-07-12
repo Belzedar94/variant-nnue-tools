@@ -17,6 +17,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -309,10 +310,10 @@ namespace Stockfish::Tools
                 if (search_pv.empty())
                     continue;
 
-                PackedSfenValue ps;
+                PackedSfenValue ps{};
                 pos.sfen_pack(ps.sfen);
                 ps.score = search_value;
-                ps.move = search_pv[0];
+                ps.move = encode_legacy_move(search_pv[0]);
                 ps.gamePly = 1;
                 ps.game_result = 0;
                 ps.padding = 0;
@@ -423,7 +424,7 @@ namespace Stockfish::Tools
                     pos.sfen_pack(ps.sfen);
                     ps.score = search_value;
                     if (!params.keep_moves)
-                        ps.move = search_pv[0];
+                        ps.move = encode_legacy_move(search_pv[0]);
                     ps.padding = 0;
 
                     out.write(th.id(), ps);
@@ -501,6 +502,12 @@ namespace Stockfish::Tools
 
     void transform(std::istringstream& is)
     {
+        if (legacy_v1_chess960_selected())
+        {
+            std::cerr << "ERROR: Legacy v1 data cannot represent Chess960 castling state.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
         const std::map<std::string, CommandFunc> subcommands = {
             { "nudged_static", &nudged_static },
             { "rescore", &rescore }

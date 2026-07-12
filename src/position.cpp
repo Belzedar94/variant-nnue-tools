@@ -34,8 +34,10 @@
 #include "uci.h"
 #include "syzygy/tbprobe.h"
 
+#ifndef NO_NNUE_TOOLS
 #include "tools/packed_sfen.h"
 #include "tools/sfen_packer.h"
+#endif
 
 using std::string;
 
@@ -70,10 +72,16 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
               os << " | *";
           else if (pos.unpromoted_piece_on(make_square(f, r)))
               os << " |+" << pos.piece_to_char()[pos.unpromoted_piece_on(make_square(f, r))];
+          else if (((pos.captures_to_hand() && !pos.drop_loop()) || pos.two_boards()) && pos.is_promoted(make_square(f, r)))
+              os << " |~" << pos.piece_to_char()[pos.piece_on(make_square(f, r))];
           else
               os << " | " << pos.piece_to_char()[pos.piece_on(make_square(f, r))];
 
+#ifdef LARGEBOARDS
+      os << " |" << (pos.max_rank() == RANK_10 && CurrentProtocol != UCI_GENERAL ? r : 1 + r);
+#else
       os << " |" << (1 + r);
+#endif
       if (r == pos.max_rank() || r == RANK_1)
       {
           Color c = r == RANK_1 ? WHITE : BLACK;
@@ -1292,6 +1300,35 @@ bool Position::legal(Move m) const {
 
   // A non-king move is legal if the king is not under attack after the move.
   return !(attackers_to(square<KING>(us), occupied, ~us, janggiCannons) & ~SquareBB[to]);
+}
+
+
+// Test whether one of the pseudo-attackers can legally capture a flag piece.
+// When the attacker is not the side to move, use an isolated position with
+// only the FEN side-to-move field changed.
+bool Position::has_legal_flag_capture(Color attacker, Square target, Bitboard candidates) const {
+
+  std::unique_ptr<StateInfo> alternateState;
+  std::unique_ptr<Position> alternate;
+  const Position* capturePos = this;
+
+  if (attacker != sideToMove)
+  {
+      string alternateFen = fen();
+      size_t sideField = alternateFen.find(' ');
+      assert(sideField != string::npos && sideField + 1 < alternateFen.size());
+      alternateFen[sideField + 1] = attacker == WHITE ? 'w' : 'b';
+      alternate = std::make_unique<Position>();
+      alternateState = std::make_unique<StateInfo>();
+      alternate->set(var, alternateFen, chess960, alternateState.get(), thisThread);
+      capturePos = alternate.get();
+  }
+
+  while (candidates)
+      if (capturePos->legal(make_move(pop_lsb(candidates), target)))
+          return true;
+
+  return false;
 }
 
 
@@ -2775,23 +2812,24 @@ bool Position::is_immediate_game_end(Value& result, int ply) const {
           }
   }
   // capture the flag
-  // A flag win by the side to move is only possible if flagMove is enabled
+  // A flag win by the side to move is only possible if flagMove or flagPieceSafe are enabled
   // and they already reached the flag region the move before.
-  // In the case both colors reached it, it is a draw if white was first.
-  if (flag_move() && flag_reached(sideToMove))
+  // In the case both colors reached it, it is a draw for flagPieceSafe or if white's king was first (special case for racing kings).
+  if ((flag_move() || var->flagPieceSafe) && flag_reached(sideToMove))
   {
-      result = sideToMove == WHITE && flag_reached(BLACK) ? VALUE_DRAW : mate_in(ply);
+      result = ((flag_move() && sideToMove == WHITE && flag_piece(~sideToMove) == KING)
+                 || (var->flagPieceSafe && !flag_move())) && flag_reached(~sideToMove) ? VALUE_DRAW : mate_in(ply);
       return true;
   }
   // A direct flag win is possible if the opponent does not get an extra flag move
   // or we can detect early for kings that they won't be able to reach the flag region
   // Note: This condition has to be after the above, since both might be true e.g. in racing kings.
-  if (   (!flag_move() || flag_piece(sideToMove) == KING) // we can do early win detection only for the king
+  if (   (!flag_move() || var->flagPieceSafe || flag_piece(sideToMove) == KING) // we can do early win detection only for the king
        && flag_reached(~sideToMove))
   {
       bool gameEnd = true;
       // Check whether king can move to CTF zone (racing kings) to draw
-      if (   flag_move() && sideToMove == BLACK && !checkers() && count<KING>(sideToMove)
+      if (   flag_move() && flag_piece(sideToMove) == KING && sideToMove == BLACK && !checkers() && count<KING>(sideToMove)
           && (flag_region(sideToMove) & attacks_from(sideToMove, KING, square<KING>(sideToMove))))
       {
           assert(flag_piece(sideToMove) == KING);
@@ -3337,6 +3375,7 @@ bool Position::pos_is_ok() const {
   return true;
 }
 
+#ifndef NO_NNUE_TOOLS
 // Add a function that directly unpacks for speed. It's pretty tough.
 // Write it by combining packer::unpack() and Position::set().
 // If there is a problem with the passed phase and there is an error, non-zero is returned.
@@ -3350,5 +3389,6 @@ void Position::sfen_pack(Tools::PackedSfen& sfen)
 {
   sfen = Tools::sfen_pack(*this);
 }
+#endif
 
 } // namespace Stockfish

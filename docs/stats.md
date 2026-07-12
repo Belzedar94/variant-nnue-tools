@@ -12,6 +12,9 @@ Any name that doesn't designate an argument name or is not an argument will be i
 
 `output_file` - optional path to the output file to write the results too. Results are always written on the console, so if this is specified the results will be written in both places.
 
+The optional output must not already exist; statistics never overwrite or
+append to an existing artifact.
+
 `max_count` - the maximum number of positions to process. Default: no limit.
 
 ## Groups

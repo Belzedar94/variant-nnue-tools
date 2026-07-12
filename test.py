@@ -74,6 +74,11 @@ startFen = rbnkbr/pppppp/6/6/PPPPPP/RBNKBR w KQkq - 0 1
 [passchess:chess]
 pass = true
 
+[squatter-test:chess]
+flagRegionWhite = *8
+flagRegionBlack = *1
+flagPieceSafe = true
+
 [royalduck:duck]
 extinctionPseudoRoyal = true
 
@@ -131,6 +136,9 @@ cannon = c
 [multipawn:chess]
 soldier = s
 pawnTypes = ps
+
+[repetitionloss:chess]
+nFoldValue = loss
 """
 
 sf.load_variant_config(ini_text)
@@ -251,6 +259,9 @@ variant_positions = {
         "k7/p7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KP
         "k7/s7/8/8/8/8/8/K7 w - - 0 1": (True, False),  # K vs KS
     },
+    "repetitionloss": {
+        "k7/8/8/8/8/8/8/K7 w - - 0 1": (False, False),  # K vs K
+    },
 }
 
 invalid_variant_positions = {
@@ -343,6 +354,11 @@ class TestPyffish(unittest.TestCase):
         fen = "10/10/10/10/10/k9/10/K9 w - - 0 1"
         result = sf.legal_moves("capablanca", fen, [])
         self.assertEqual(result, ["a1b1"])
+
+        # Dobutsu is a catch variant: a lion may enter attack and is then won
+        # by capture. Only an attacked try on the last rank is not a flag win.
+        result = sf.legal_moves("dobutsu", "2l/g2/1L1/3[] w - - 0 1", [])
+        self.assertIn("b2a2", result)
 
         result = sf.legal_moves("grand", GRAND, ["a3a5"])
         self.assertIn("a10b10", result)
@@ -1082,6 +1098,17 @@ class TestPyffish(unittest.TestCase):
         result = sf.game_result("suicide", "8/8/8/7p/7P/8/8/n7 w - - 0 1", [])
         self.assertEqual(result, sf.VALUE_MATE)
 
+        # armageddon
+        # black gets stalemated
+        result = sf.game_result("armageddon", "k7/P7/K7/8/8/8/8/8 b - - 0 1", [])
+        self.assertEqual(result, sf.VALUE_MATE)
+        # white gets stalemated
+        result = sf.game_result("armageddon", "8/8/8/8/8/k7/p7/K7 w - - 0 1", [])
+        self.assertEqual(result, -sf.VALUE_MATE)
+        # 50 move rule
+        result = sf.game_result("armageddon", "3n4/8/8/3k4/8/3K4/8/3BB3 w - - 100 80", [])
+        self.assertEqual(result, -sf.VALUE_MATE)
+
         # atomic check- and stalemate
         # checkmate
         result = sf.game_result("atomic", "BQ6/Rk6/8/8/8/8/8/4K3 b - - 0 1", [])
@@ -1117,6 +1144,22 @@ class TestPyffish(unittest.TestCase):
         self._check_immediate_game_end("flipello", "pppppppp/pppppppp/pppPpppp/pPpPpppp/pppppppp/pPpPPPPP/ppPpPPpp/pppppppp[PPpp] b - - 63 32", [], True, sf.VALUE_MATE)
         self._check_immediate_game_end("ataxx", "PPPpppp/pppPPPp/pPPPPPP/PPPPPPp/ppPPPpp/pPPPPpP/pPPPPPP b - - 99 50", [], True, -sf.VALUE_MATE)
         self._check_immediate_game_end("ataxx", "PPPpppp/pppPPPp/pPP*PPP/PP*P*Pp/ppP*Ppp/pPPPPpP/pPPPPPP b - - 99 50", [], True, -sf.VALUE_MATE)
+
+        # dobutsu flag rules
+        self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b2a2"], True, sf.VALUE_MATE)
+        self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b4a4"], True, -sf.VALUE_MATE)
+        self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b2b3"], True, sf.VALUE_DRAW)
+        self._check_immediate_game_end("dobutsu", "1L1/1g1/1G1/1l1[] w - - 0 1", ["b4b3"], False)
+
+        # A pinned pseudo-attacker cannot prevent a flagPieceSafe win. Cover
+        # both the current side and the isolated opposite-side legality path.
+        squatter_pinned = "2K1k3/4n3/8/8/8/8/8/4R3"
+        self._check_immediate_game_end("squatter-test", squatter_pinned + " b - - 0 1", [], True, -sf.VALUE_MATE)
+        self._check_immediate_game_end("squatter-test", squatter_pinned + " w - - 0 1", [], True, sf.VALUE_MATE)
+
+        # Moving the rook off the e-file makes the knight capture legal, so it
+        # must still prevent the flag win.
+        self._check_immediate_game_end("squatter-test", "2K1k3/4n3/8/8/8/8/8/3R4 b - - 0 1", [], False)
 
     def _check_optional_game_end(self, variant, fen, moves, game_end, game_result=None):
         with self.subTest(variant=variant, fen=fen, game_end=game_end, game_result=game_result):

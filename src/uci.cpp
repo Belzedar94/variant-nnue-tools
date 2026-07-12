@@ -36,6 +36,7 @@
 #include "xboard.h"
 #include "syzygy/tbprobe.h"
 
+#ifndef NO_NNUE_TOOLS
 #include "tools/validate_training_data.h"
 #include "tools/training_data_generator.h"
 #include "tools/training_data_generator_nonpv.h"
@@ -43,6 +44,7 @@
 #include "tools/convert.h"
 #include "tools/transform.h"
 #include "tools/stats.h"
+#endif
 
 using namespace std;
 
@@ -367,6 +369,7 @@ void search_mcts_cmd(Position& pos, istringstream& is)
     }
   }
 
+#ifndef NO_NNUE_TOOLS
   // write_trainer_config() writes the variant.h and variant.py for the trainer
   void write_trainer_config(istringstream& is) {
     string variant = Options["UCI_Variant"];
@@ -443,6 +446,7 @@ void search_mcts_cmd(Position& pos, istringstream& is)
         out2.close();
     }
   }
+#endif
 
 
 /// UCI::loop() waits for a command from stdin, parses it and calls the appropriate
@@ -558,7 +562,9 @@ void UCI::loop(int argc, char* argv[]) {
       }
       else if (token == "load")     { load(is); argc = 1; } // continue reading stdin
       else if (token == "check")    load(is, true);
+#ifndef NO_NNUE_TOOLS
       else if (token == "trainer_config") write_trainer_config(is);
+#endif
       // UCI-Cyclone omits the "position" keyword
       else if (token == "fen" || token == "startpos")
       {
@@ -572,6 +578,7 @@ void UCI::loop(int argc, char* argv[]) {
           is.seekg(0);
           position(pos, is, states);
       }
+#ifndef NO_NNUE_TOOLS
       else if (token == "generate_training_data") Tools::generate_training_data(is);
       else if (token == "generate_training_data_nonpv") Tools::generate_training_data_nonpv(is);
       else if (token == "generate_puzzles") Tools::generate_puzzles(is);
@@ -583,6 +590,7 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "convert_bin_from_pgn_extract") Tools::convert_bin_from_pgn_extract(is);
       else if (token == "transform") Tools::transform(is);
       else if (token == "gather_statistics") Tools::Stats::gather_statistics(is);
+#endif
 
       // Command to call qsearch(),search() directly for testing
       else if (token == "qsearch") qsearch_cmd(pos);

@@ -19,14 +19,14 @@ jobs:
         node-version: [12.x]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Setup cache
         id: cache-system-libraries
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{env.EM_CACHE_FOLDER}}
           key: emsdk-${{env.EM_VERSION}}-${{ runner.os }}
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: mymindstorm/setup-emsdk@v16
         with:
           version: ${{env.EM_VERSION}}
           actions-cache-folder: ${{env.EM_CACHE_FOLDER}}
@@ -53,14 +53,14 @@ jobs:
         node-version: [12.x]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Setup cache
         id: cache-system-libraries
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{env.EM_CACHE_FOLDER}}
           key: emsdk-${{env.EM_VERSION}}-${{ runner.os }}
-      - uses: mymindstorm/setup-emsdk@v14
+      - uses: mymindstorm/setup-emsdk@v16
         with:
           version: ${{env.EM_VERSION}}
           actions-cache-folder: ${{env.EM_CACHE_FOLDER}}
@@ -72,7 +72,7 @@ jobs:
         working-directory: src
         run: rm -f ../tests/js/ffish.js & rm -f ../tests/js/ffish.wasm & make -f Makefile_js build es6=yes
       - name: Upload ffish.js ES6/ES2015 module ZIP archive
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ffishjs-es6
           path: tests/js/*
@@ -82,7 +82,7 @@ jobs:
         working-directory: src
         run: rm -f ../tests/js/ffish.js & rm -f ../tests/js/ffish.wasm & make -f Makefile_js build
       - name: Upload ffish.js standard module ZIP archive
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ffishjs-standard
           path: tests/js/*

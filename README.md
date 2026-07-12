@@ -2,6 +2,10 @@
 
 This is a variant NNUE training data generator based on [Fairy-Stockfish](https://github.com/ianfab/Fairy-Stockfish) to generate data for the [variant NNUE trainer](https://github.com/ianfab/variant-nnue-pytorch). See the [wiki of the training code](https://github.com/ianfab/variant-nnue-pytorch/wiki/Training-data-generation) for more information.
 
+The pinned Atomic compatibility workflow, historical 72-byte wire contract,
+deterministic seed rules, NNUE `pure` usage, and validation policy are documented
+in [Legacy Atomic v1 pipeline](docs/legacy_atomic_v1.md).
+
 You can download binaries from the [releases](https://github.com/ianfab/variant-nnue-tools/releases) or the [development versions](https://github.com/ianfab/variant-nnue-tools/actions/workflows/release.yml).
 
 # Fairy-Stockfish

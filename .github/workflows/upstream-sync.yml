@@ -33,7 +33,7 @@ jobs:
     steps:
       # Step 1: Checkout target repo
       - name: Checkout target repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: tools
           # Required for pushing changes
@@ -49,7 +49,7 @@ jobs:
       # Step 3: Sync upstream changes
       - name: Sync upstream changes
         id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.3
         with:
           target_sync_branch: tools
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}

@@ -12,7 +12,7 @@ if platform.python_compiler().startswith("MSC"):
 else:
     args = ["-std=c++17", "-flto", "-Wno-date-time"]
 
-args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF"])
+args.extend(["-DLARGEBOARDS", "-DALLVARS", "-DPRECOMPUTED_MAGICS", "-DNNUE_EMBEDDING_OFF", "-DNO_NNUE_TOOLS"])
 
 if "64bit" in platform.architecture():
     args.append("-DIS_64BIT")
@@ -41,7 +41,7 @@ pyffish_module = Extension(
     depends=headers,
     extra_compile_args=args)
 
-setup(name="pyffish", version="0.0.88",
+setup(name="pyffish", version="0.0.89",
       description="Fairy-Stockfish Python wrapper",
       long_description=long_description,
       long_description_content_type="text/markdown",

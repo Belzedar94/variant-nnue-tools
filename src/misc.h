@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <limits>
 
 #include <cstdint>
 #include <cmath>
@@ -385,7 +386,7 @@ static uint64_t string_hash(const std::string& str)
 {
   uint64_t h = 525201411107845655ull;
 
-  for (auto c : str) {
+  for (unsigned char c : str) {
     h ^= static_cast<uint64_t>(c);
     h *= 0x5bd1e9955bd1e995ull;
     h ^= h >> 47;
@@ -395,6 +396,8 @@ static uint64_t string_hash(const std::string& str)
 }
 
 class PRNG {
+
+  static constexpr uint64_t ZeroSeedFallback = 0x9E3779B97F4A7C15ULL;
 
   uint64_t s;
 
@@ -406,7 +409,7 @@ class PRNG {
 
 public:
   PRNG() { set_seed_from_time(); }
-  PRNG(uint64_t seed) : s(seed) { assert(seed); }
+  PRNG(uint64_t seed) { set_seed(seed); }
   PRNG(const std::string& seed) { set_seed(seed); }
 
   template<typename T> T rand() { return T(rand64()); }
@@ -421,18 +424,12 @@ public:
   // Return the random seed used internally.
   uint64_t get_seed() const { return s; }
 
-  void set_seed(uint64_t seed) { s = seed; }
+  void set_seed(uint64_t seed) { s = seed ? seed : ZeroSeedFallback; }
 
   uint64_t next_random_seed()
   {
-    uint64_t seed = 0;
-    for(int i = 0; i < 64; ++i)
-    {
-      const auto off = rand64() % 64;
-      seed |= (rand64() & (uint64_t(1) << off)) >> off;
-      seed <<= 1;
-    }
-    return seed;
+    const uint64_t seed = rand64();
+    return seed ? seed : ZeroSeedFallback;
   }
 
   void set_seed_from_time()
@@ -446,8 +443,19 @@ public:
     {
       set_seed_from_time();
     }
-    else if (std::all_of(str.begin(), str.end(), [](char c) { return std::isdigit(c);} )) {
-      set_seed(std::stoull(str));
+    else if (std::all_of(str.begin(), str.end(), [](unsigned char c) { return std::isdigit(c);} )) {
+      uint64_t value = 0;
+      for (unsigned char c : str)
+      {
+        const uint64_t digit = c - '0';
+        if (value > (std::numeric_limits<uint64_t>::max() - digit) / 10)
+        {
+          set_seed(string_hash(str));
+          return;
+        }
+        value = value * 10 + digit;
+      }
+      set_seed(value);
     }
     else
     {

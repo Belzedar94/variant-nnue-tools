@@ -34,8 +34,10 @@
 
 #include "nnue/nnue_accumulator.h"
 
+#ifndef NO_NNUE_TOOLS
 #include "tools/packed_sfen.h"
 #include "tools/sfen_packer.h"
+#endif
 
 namespace Stockfish {
 
@@ -352,6 +354,7 @@ public:
 
   // --sfenization helper
 
+#ifndef NO_NNUE_TOOLS
   friend int Tools::set_from_packed_sfen(Position& pos, const Tools::PackedSfen& sfen, StateInfo* si, Thread* th);
 
   // Get the packed sfen. Returns to the buffer specified in the argument.
@@ -363,6 +366,7 @@ public:
   // If there is a problem with the passed phase and there is an error, non-zero is returned.
   // PackedSfen does not include gamePly so it cannot be restored. If you want to set it, specify it with an argument.
   int set_from_packed_sfen(const Tools::PackedSfen& sfen, StateInfo* si, Thread* th);
+#endif
 
   void clear() { std::memset(this, 0, sizeof(Position)); }
 
@@ -382,6 +386,7 @@ private:
   void set_check_info(StateInfo* si) const;
 
   // Other helpers
+  bool has_legal_flag_capture(Color attacker, Square target, Bitboard candidates) const;
   void move_piece(Square from, Square to);
   template<bool Do>
   void do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto);
@@ -940,11 +945,6 @@ inline EnclosingRule Position::flip_enclosed_pieces() const {
 
 inline Value Position::stalemate_value(int ply) const {
   assert(var != nullptr);
-  if (var->stalematePieceCount)
-  {
-      int c = count<ALL_PIECES>(sideToMove) - count<ALL_PIECES>(~sideToMove);
-      return c == 0 ? VALUE_DRAW : convert_mate_value(c < 0 ? var->stalemateValue : -var->stalemateValue, ply);
-  }
   // Check for checkmate of pseudo-royal pieces
   if (var->extinctionPseudoRoyal)
   {
@@ -974,7 +974,17 @@ inline Value Position::stalemate_value(int ply) const {
               return convert_mate_value(var->checkmateValue, ply);
       }
   }
-  return convert_mate_value(var->stalemateValue, ply);
+  Value result = var->stalemateValue;
+  // Is piece count used to determine stalemate result?
+  if (var->stalematePieceCount)
+  {
+      int c = count<ALL_PIECES>(sideToMove) - count<ALL_PIECES>(~sideToMove);
+      result = c == 0 ? VALUE_DRAW : c < 0 ? var->stalemateValue : -var->stalemateValue;
+  }
+  // Apply material counting
+  if (result == VALUE_DRAW && var->materialCounting)
+      result = material_counting_result();
+  return convert_mate_value(result, ply);
 }
 
 inline Value Position::checkmate_value(int ply) const {
@@ -1084,34 +1094,20 @@ inline bool Position::flag_reached(Color c) const {
         (flag_region(c) & pieces(c, flag_piece(c)))
         && (   popcount(flag_region(c) & pieces(c, flag_piece(c))) >= var->flagPieceCount
             || (var->flagPieceBlockedWin && !(flag_region(c) & ~pieces())));
-      
-  if (simpleResult&&var->flagPieceSafe)
+
+  // When flagPieceSafe and flagMove are combined, it means that only unsafe pieces cause an extra move
+  if (simpleResult && var->flagPieceSafe && (!flag_move() || c == ~sideToMove))
   {
       Bitboard piecesInFlagZone = flag_region(c) & pieces(c, flag_piece(c));
-      int potentialPieces = (popcount(piecesInFlagZone));
-      /*
-      There isn't a variant that uses it, but in the hypothetical game where the rules say I need 3
-      pieces in the flag zone and they need to be safe: If I have 3 pieces there, but one is under
-      threat, I don't think I can declare victory. If I have 4 there, but one is under threat, I
-      think that's victory.
-      */      
-      while (piecesInFlagZone)
+      int potentialPieces = popcount(piecesInFlagZone);
+      // If we are exactly at the required piece count, all pieces in the flag zone need to be safe
+      while (piecesInFlagZone && potentialPieces == var->flagPieceCount)
       {
           Square sr = pop_lsb(piecesInFlagZone);
           Bitboard flagAttackers = attackers_to(sr, ~c);
-
-          if ((potentialPieces < var->flagPieceCount) || (potentialPieces >= var->flagPieceCount + 1)) break;
-          while (flagAttackers)
-          {
-              Square currentAttack = pop_lsb(flagAttackers);
-              if (legal(make_move(currentAttack, sr)))
-              {
-                  potentialPieces--;
-                  break;
-              }
-          }
+          if (flagAttackers && has_legal_flag_capture(~c, sr, flagAttackers))
+              return false;
       }
-      return potentialPieces >= var->flagPieceCount;
   }
   return simpleResult;
 }

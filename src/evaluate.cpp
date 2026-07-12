@@ -90,8 +90,9 @@ namespace Eval {
 
   void NNUE::init() {
 
-    useNNUE = nnue_mode_from_option(Options["Use NNUE"]);
-    if (useNNUE == UseNNUEMode::False)
+    const UseNNUEMode requestedMode = nnue_mode_from_option(Options["Use NNUE"]);
+    useNNUE = requestedMode;
+    if (requestedMode == UseNNUEMode::False)
         return;
 
     string eval_file = string(Options["EvalFile"]);
@@ -107,7 +108,7 @@ namespace Eval {
         string nnueAlias = variants.find(variant)->second->nnueAlias;
         if (basename.rfind(variant, 0) != string::npos || (!nnueAlias.empty() && basename.rfind(nnueAlias, 0) != string::npos))
         {
-            useNNUE = UseNNUEMode::True;
+            useNNUE = use_nnue_mode_for_variant_network(requestedMode, true);
             break;
         }
     }
@@ -161,8 +162,9 @@ namespace Eval {
         UCI::OptionsMap defaults;
         UCI::init(defaults);
 
-        string msg1 = "If the UCI option \"Use NNUE\" is set to true, network evaluation parameters compatible with the engine must be available.";
-        string msg2 = "The option is set to true, but the network file " + eval_file + " was not loaded successfully.";
+        const string mode = useNNUE == UseNNUEMode::Pure ? "pure" : "true";
+        string msg1 = "If the UCI option \"Use NNUE\" is enabled, network evaluation parameters compatible with the engine must be available.";
+        string msg2 = "The option is set to " + mode + ", but the network file " + eval_file + " was not loaded successfully.";
         string msg3 = "The UCI option EvalFile might need to specify the full path, including the directory name, to the network file.";
         string msg4 = "The default net can be downloaded from: https://tests.stockfishchess.org/api/nn/" + string(defaults["EvalFile"]);
         string msg5 = "The engine will be terminated now.";
@@ -179,7 +181,9 @@ namespace Eval {
     if (CurrentProtocol != XBOARD)
     {
         if (useNNUE != UseNNUEMode::False)
-            sync_cout << "info string NNUE evaluation using " << eval_file_loaded << " enabled" << sync_endl;
+            sync_cout << "info string NNUE evaluation using " << eval_file_loaded
+                      << " enabled (Use NNUE="
+                      << (useNNUE == UseNNUEMode::Pure ? "pure" : "true") << ")" << sync_endl;
         else
             sync_cout << "info string classical evaluation enabled" << sync_endl;
     }

@@ -8,6 +8,24 @@ error()
 }
 trap 'error ${LINENO}' ERR
 
+# Each instrumentation mode runs in the same checkout, while output tools
+# intentionally refuse missing parent directories and existing paths. Give
+# every invocation fresh, relative paths that also work for native Windows
+# engines launched from MSYS expect, and remove them on success or failure.
+instrumented_output_dir=$(mktemp -d "instrumented-output.XXXXXX")
+training_data_file="$instrumented_output_dir/training_data.bin"
+training_plain_file="$instrumented_output_dir/training_data.txt"
+validation_data_file="$instrumented_output_dir/validation_data.bin"
+
+cleanup()
+{
+  rm -rf "$instrumented_output_dir"
+  rm -f game.exp syzygy.exp data_generation01.exp data_generation02.exp tsan.supp \
+    game.exp.log data_generation01.exp.log data_generation02.exp.log
+}
+
+trap cleanup EXIT
+
 # define suitable post and prefixes for testing options
 case $1 in
   --valgrind)
@@ -153,10 +171,18 @@ cat << EOF > data_generation01.exp
  send "setoption name Threads value $threads\n"
  send "setoption name Use NNUE value false\n"
  send "isready\n"
- send "generate_training_data depth 3 count 100 keep_draws 1 eval_limit 32000 output_file_name training_data/training_data.bin output_format bin\n"
- expect "INFO: Gensfen finished."
- send "convert_plain targetfile training_data/training_data.bin output_file_name training_data.txt\n"
- expect "all done"
+ send "generate_training_data depth 3 count 100 keep_draws 1 eval_limit 32000 output_file_name $training_data_file data_format bin\n"
+ expect {
+   "INFO: generate_training_data finished." {}
+   timeout { puts stderr "generate_training_data timed out"; exit 1 }
+   eof { puts stderr "engine exited during generate_training_data"; exit 1 }
+ }
+ send "convert_plain targetfile $training_data_file output_file_name $training_plain_file\n"
+ expect {
+   "all done" {}
+   timeout { puts stderr "convert_plain timed out"; exit 1 }
+   eof { puts stderr "engine exited during convert_plain"; exit 1 }
+ }
 
  send "quit\n"
  expect eof
@@ -177,8 +203,12 @@ cat << EOF > data_generation02.exp
  send "setoption name Threads value $threads\n"
  send "setoption name Use NNUE value true\n"
  send "isready\n"
- send "generate_training_data depth 4 count 50 keep_draws 1 eval_limit 32000 output_file_name validation_data/validation_data.bin output_format bin\n"
- expect "INFO: Gensfen finished."
+ send "generate_training_data depth 4 count 50 keep_draws 1 eval_limit 32000 output_file_name $validation_data_file data_format bin\n"
+ expect {
+   "INFO: generate_training_data finished." {}
+   timeout { puts stderr "generate_training_data timed out"; exit 1 }
+   eof { puts stderr "engine exited during generate_training_data"; exit 1 }
+ }
 
  send "quit\n"
  expect eof
@@ -191,8 +221,18 @@ EOF
 for exp in game.exp data_generation01.exp data_generation02.exp
 do
 
-  echo "$prefix expect $exp $postfix"
-  eval "$prefix expect $exp $postfix"
+  if [ "$1" = "--valgrind" ] || [ "$1" = "--valgrind-thread" ]; then
+    echo "expect $exp (captured; printed on failure)"
+    if ! expect "$exp" > "$exp.log" 2>&1; then
+      cat "$exp.log"
+      rm -f "$exp.log"
+      false
+    fi
+    rm -f "$exp.log"
+  else
+    echo "$prefix expect $exp $postfix"
+    eval "$prefix expect $exp $postfix"
+  fi
 
   rm $exp
 

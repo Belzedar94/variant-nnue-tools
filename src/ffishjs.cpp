@@ -301,7 +301,7 @@ public:
     if (!gameEnd) {
       if (is_insufficient_material()) {
         gameEnd = true;
-        result = VALUE_DRAW;
+        result = pos.material_counting() ? pos.material_counting_result() : VALUE_DRAW;
       }
     }
     if (!gameEnd && MoveList<LEGAL>(pos).size() == 0) {
@@ -313,13 +313,8 @@ public:
 
     if (!gameEnd)
       return "*";
-    if (result == 0) {
-      if (pos.material_counting())
-        result = pos.material_counting_result();
-
-      if (result == 0)
-        return "1/2-1/2";
-    }
+    if (result == 0)
+      return "1/2-1/2";
     if (pos.side_to_move() == BLACK)
       result = -result;
     if (result > 0)

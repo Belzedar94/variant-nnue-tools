@@ -8,6 +8,14 @@ It is recommended to set the `PruneAtShallowDepth` UCI option to `false` as it w
 
 It is recommended to keep the `EnableTranspositionTable` UCI option at the default `true` value as it will make the generation process faster without noticeably harming the uniformity of the data.
 
+For Atomic NNUE dataset generation, select `UCI_Variant=atomic`, load the
+intended network, and set `Use NNUE=pure` before running the command. `pure` is
+reserved for data generation; use `true` for normal engine play and strength
+testing.
+
+Output paths are exclusive: an existing `.bin` file is rejected and is never
+appended to or overwritten.
+
 `generate_training_data` takes named parameters in the form of `generate_training_data param_1_name param_1_value param_2_name param_2_value ...`.
 
 Currently the following options are available:
@@ -16,9 +24,9 @@ Currently the following options are available:
 
 `depth` - sets minimum and maximum depth of evaluation of each position. Default: 3.
 
-`mindepth` - minimum depth of evaluation of each position. If not specified then the same as `depth`.
+`min_depth` - minimum depth of evaluation of each position. If not specified then the same as `depth`.
 
-`maxdepth` - minimum depth of evaluation of each position. If not specified then the same as `depth`.
+`max_depth` - maximum depth of evaluation of each position. If not specified then the same as `depth`.
 
 `nodes` - the number of nodes to use for evaluation of each position. This number is multiplied by the number of PVs of the current search. This does NOT override the `depth` and `depth2` options. If specified then whichever of depth or nodes limit is reached first applies.
 
@@ -60,4 +68,9 @@ Currently the following options are available:
 
 `data_format` - format of the training data to use. Only `bin` is supported. Default: `bin`.
 
-`seed` - seed for the PRNG. Can be either a number or a string. If it's a string then its hash will be used. If not specified then the current time will be used.
+`seed` - seed for the PRNG. It can be a number or a string; strings use a stable
+64-bit hash. An omitted seed is resolved once from the clock. In every case the
+resolved decimal value is printed as `PRNG::initial_seed`; record it and reuse it
+to replay the random streams. Byte-identical output additionally requires the
+same binary, inputs/options, and `Threads=1`; multi-thread record ordering is not
+defined.

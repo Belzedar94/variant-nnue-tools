@@ -3,6 +3,7 @@
 #include "sfen_writer.h"
 #include "packed_sfen.h"
 #include "opening_book.h"
+#include "random_seed.h"
 
 #include "misc.h"
 #include "position.h"
@@ -19,6 +20,7 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -75,7 +77,7 @@ namespace Stockfish::Tools
             {
                 // Limit the maximum to a one-stop score. (Otherwise you might not end the loop)
                 eval_limit = std::min(eval_limit, (int)mate_in(2));
-                exploration_eval_limit = std::min(eval_limit, (int)mate_in(2));
+                exploration_eval_limit = std::min(exploration_eval_limit, (int)mate_in(2));
                 exploration_min_nodes = std::max(100, exploration_min_nodes);
                 exploration_max_nodes = std::max(exploration_min_nodes, exploration_max_nodes);
 
@@ -91,20 +93,26 @@ namespace Stockfish::Tools
             const Params& prm
         ) :
             params(prm),
-            prng(prm.seed),
             sfen_writer(prm.output_file_name, prm.num_threads, std::numeric_limits<uint64_t>::max(), prm.sfen_format)
         {
+            prngs.reserve(prm.num_threads);
+            PRNG seed_source(prm.seed);
+            uint64_t seed = seed_source.get_seed();
+            std::cout << "PRNG::initial_seed = " << seed << std::endl;
+            for (int i = 0; i < prm.num_threads; ++i)
+            {
+                prngs.emplace_back(seed);
+                seed = seed_source.next_random_seed();
+            }
+
             if (!prm.book.empty())
             {
-                opening_book = open_opening_book(prm.book, prng);
+                opening_book = open_opening_book(prm.book, prngs[0]);
                 if (opening_book == nullptr)
                 {
                     std::cout << "WARNING: Failed to open opening book " << prm.book << ". Falling back to startpos.\n";
                 }
             }
-
-            // Output seed to verify by the user if it's not identical by chance.
-            std::cout << prng << std::endl;
         }
 
         void generate(uint64_t limit);
@@ -112,7 +120,7 @@ namespace Stockfish::Tools
     private:
         Params params;
 
-        PRNG prng;
+        std::vector<PRNG> prngs;
 
         std::mutex stats_mutex;
         TimePoint last_stats_report_time;
@@ -139,7 +147,8 @@ namespace Stockfish::Tools
 
         PSVector do_exploration(
             Thread& th,
-            int count);
+            int count,
+            PRNG& prng);
 
         void report(uint64_t done, uint64_t new_done);
 
@@ -189,16 +198,17 @@ namespace Stockfish::Tools
 
     PSVector TrainingDataGeneratorNonPv::do_exploration(
         Thread& th,
-        int count)
+        int count,
+        PRNG& prng)
     {
         constexpr int max_depth = 30;
 
         PSVector psv;
 
         std::vector<StateInfo, AlignedAllocator<StateInfo>> states(
-            max_depth + MAX_PLY /* == search_depth_min + α */);
+            params.exploration_max_ply + MAX_PLY);
 
-        th.set_eval_callback([this, &psv](Position& pos) {
+        th.set_eval_callback([this, &psv, &prng](Position& pos) {
             if ((double)prng.rand<uint64_t>() / std::numeric_limits<uint64_t>::max() < params.exploration_save_rate)
             {
                 psv.emplace_back();
@@ -261,6 +271,7 @@ namespace Stockfish::Tools
         StateInfo si;
 
         PSVector psv;
+        auto& prng = prngs[th.id()];
 
         // end flag
         bool quit = false;
@@ -268,12 +279,16 @@ namespace Stockfish::Tools
         // repeat until the specified number of times
         while (!quit)
         {
+            // Poll from the owning producer even when the previous batch did
+            // not yield a record, so partial data is persisted periodically.
+            sfen_writer.flush_if_due(th.id());
+
             // It is necessary to set a dependent thread for Position.
             // When parallelizing, Threads (since this is a vector<Thread*>,
             // Do the same for up to Threads[0]...Threads[thread_num-1].
             auto& pos = th.rootPos;
 
-            auto packed_sfens = do_exploration(th, exploration_batch_size);
+            auto packed_sfens = do_exploration(th, exploration_batch_size, prng);
             psv.clear();
 
             for (auto& ps : packed_sfens)
@@ -306,7 +321,7 @@ namespace Stockfish::Tools
                 auto& new_ps = psv.emplace_back();
                 pos.sfen_pack(new_ps.sfen);
                 new_ps.score = search_value;
-                new_ps.move = search_pv[0];
+                new_ps.move = encode_legacy_move(search_pv[0]);
                 new_ps.gamePly = 1;
                 new_ps.game_result = 0;
                 new_ps.padding = 0;
@@ -420,6 +435,8 @@ namespace Stockfish::Tools
                 is >> params.exploration_max_nodes;
             else if (token == "exploration_min_pieces")
                 is >> params.exploration_min_pieces;
+            else if (token == "exploration_max_ply")
+                is >> params.exploration_max_ply;
             else if (token == "exploration_save_rate")
                 is >> params.exploration_save_rate;
             else if (token == "book")
@@ -442,7 +459,7 @@ namespace Stockfish::Tools
             else
             {
                 cout << "ERROR: Unknown option " << token << ". Exiting...\n";
-                return;
+                std::exit(EXIT_FAILURE);
             }
         }
 
@@ -451,8 +468,34 @@ namespace Stockfish::Tools
             if (sfen_format == "bin")
                 params.sfen_format = SfenOutputType::Bin;
             else
-                cout << "WARNING: Unknown sfen format `" << sfen_format << "`. Using bin\n";
+            {
+                cout << "ERROR: Unknown sfen format `" << sfen_format << "`.\n";
+                std::exit(EXIT_FAILURE);
+            }
         }
+
+        if (count == 0
+            || params.search_depth < 0 || params.eval_limit <= 0
+            || params.exploration_eval_limit <= 0
+            || params.exploration_min_nodes < 0
+            || params.exploration_max_nodes < params.exploration_min_nodes
+            || params.exploration_min_pieces < 0
+            || params.exploration_max_ply <= 0
+            || params.exploration_max_ply > std::numeric_limits<std::uint16_t>::max()
+            || !std::isfinite(params.exploration_save_rate)
+            || params.exploration_save_rate <= 0 || params.exploration_save_rate > 1
+            || params.output_file_name.empty())
+        {
+            cout << "ERROR: Invalid generate_training_data_nonpv parameter range.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        if (legacy_v1_chess960_selected())
+        {
+            cout << "ERROR: Legacy v1 training data cannot represent Chess960 castling state.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        params.seed = resolve_replayable_seed(params.seed);
 
         params.enforce_constraints();
 
@@ -467,6 +510,7 @@ namespace Stockfish::Tools
             << "  - exploration_min_nodes  = " << params.exploration_min_nodes << endl
             << "  - exploration_max_nodes  = " << params.exploration_max_nodes << endl
             << "  - exploration_min_pieces = " << params.exploration_min_pieces << endl
+            << "  - exploration_max_ply    = " << params.exploration_max_ply << endl
             << "  - exploration_save_rate  = " << params.exploration_save_rate << endl
             << "  - book                   = " << params.book << endl
             << "  - data_format            = " << sfen_format << endl

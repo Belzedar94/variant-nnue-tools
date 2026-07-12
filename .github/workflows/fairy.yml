@@ -37,7 +37,7 @@ jobs:
       run:
         working-directory: src
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -55,6 +55,11 @@ jobs:
           make clean
           make -j2 ARCH=x86-64 nnue=yes debug=yes build
           ./stockfish bench
+
+      - name: Test training-data wire helpers
+        run: |
+          CXX="$COMPILER" bash ../tests/tools_unit.sh
+          python3 ../tests/tools_integration.py --engine ./stockfish
 
       - name: Test NNUE largeboards
         run: |
