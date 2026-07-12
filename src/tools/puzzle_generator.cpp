@@ -278,6 +278,10 @@ namespace Stockfish::Tools
         // repeat until the specified number of times
         while (!quit)
         {
+            // Poll from the owning producer even when the previous game did
+            // not yield a record, so partial data is persisted periodically.
+            sfen_writer.flush_if_due(th.id());
+
             // It is necessary to set a dependent thread for Position.
             // When parallelizing, Threads (since this is a vector<Thread*>,
             // Do the same for up to Threads[0]...Threads[thread_num-1].

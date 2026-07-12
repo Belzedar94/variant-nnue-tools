@@ -355,6 +355,11 @@ class TestPyffish(unittest.TestCase):
         result = sf.legal_moves("capablanca", fen, [])
         self.assertEqual(result, ["a1b1"])
 
+        # Dobutsu is a catch variant: a lion may enter attack and is then won
+        # by capture. Only an attacked try on the last rank is not a flag win.
+        result = sf.legal_moves("dobutsu", "2l/g2/1L1/3[] w - - 0 1", [])
+        self.assertIn("b2a2", result)
+
         result = sf.legal_moves("grand", GRAND, ["a3a5"])
         self.assertIn("a10b10", result)
 
