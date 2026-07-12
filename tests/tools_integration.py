@@ -129,6 +129,9 @@ def main():
         inconsistent_ep_binary = root / "inconsistent-ep.bin"
         disabled_ep_plain = root / "disabled-ep.plain"
         disabled_ep_binary = root / "disabled-ep.bin"
+        illegal_move_plain = root / "illegal-move.plain"
+        unchecked_illegal_binary = root / "unchecked-illegal.bin"
+        checked_illegal_binary = root / "checked-illegal.bin"
 
         # The second record deliberately omits score/ply/result. It must receive
         # the format defaults rather than inheriting values from the first one.
@@ -437,6 +440,43 @@ e
         )
         if disabled_ep_binary.exists():
             raise AssertionError("no-en-passant variant left an output file")
+
+        illegal_move_plain.write_text(
+            """fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+move e2e5
+score 0
+ply 1
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 0".format(
+                illegal_move_plain, unchecked_illegal_binary
+            ),
+        )
+        unchecked_data = unchecked_illegal_binary.read_bytes()
+        if len(unchecked_data) != RECORD_SIZE:
+            raise AssertionError("unchecked representable move was filtered")
+        if record_field(unchecked_data, 0, MOVE_OFFSET, "<H") != 0x0324:
+            raise AssertionError("unchecked e2e5 move did not use the canonical wire")
+        expect_validation_failure(
+            engine, unchecked_illegal_binary, "move is not legal"
+        )
+
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                illegal_move_plain, checked_illegal_binary
+            ),
+            expect_success=False,
+            failure_text="produced no valid records",
+        )
+        if checked_illegal_binary.exists():
+            raise AssertionError("checked illegal move left an output file")
 
         stats_command = "gather_statistics position_count input_file {} output_file {}".format(
             binary, stats_output

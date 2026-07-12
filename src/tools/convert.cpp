@@ -23,6 +23,7 @@
 #include <limits>
 #include <optional>
 #include <chrono>
+#include <cctype>
 #include <cstdlib>
 #include <random>
 #include <regex>
@@ -70,6 +71,58 @@ namespace Stockfish::Tools
     {
         if (Options["UCI_Chess960"])
             conversion_error("Legacy v1 data cannot represent Chess960 castling state.");
+    }
+
+    // Compatibility parser for check_illegal_move=0. The opt-out may bypass
+    // move legality, but it must never bypass the historical wire's 8x8/type
+    // limits or fall back to truncating the wider internal Move value.
+    static Move parse_representable_legacy_move(const Position& pos,
+                                                const std::string& value)
+    {
+        if (value.size() != 4 && value.size() != 5)
+            return MOVE_NONE;
+
+        const auto parse_square = [](char file, char rank) {
+            if (file < 'a' || file > 'h' || rank < '1' || rank > '8')
+                return SQ_NONE;
+            return make_square(File(file - 'a'), Rank(rank - '1'));
+        };
+
+        const Square from = parse_square(value[0], value[1]);
+        const Square to = parse_square(value[2], value[3]);
+        if (!is_ok(from) || !is_ok(to) || from == to)
+            return MOVE_NONE;
+
+        if (value.size() == 5)
+        {
+            PieceType promotion = NO_PIECE_TYPE;
+            switch (char(std::tolower(static_cast<unsigned char>(value[4]))))
+            {
+            case 'n': promotion = KNIGHT; break;
+            case 'b': promotion = BISHOP; break;
+            case 'r': promotion = ROOK; break;
+            case 'q': promotion = QUEEN; break;
+            default: return MOVE_NONE;
+            }
+            return make<PROMOTION>(from, to, promotion);
+        }
+
+        const Piece mover = pos.piece_on(from);
+        const Piece target = pos.piece_on(to);
+        if (mover != NO_PIECE)
+        {
+            const Color color = color_of(mover);
+            if ((pos.en_passant_types(color) & type_of(mover))
+                && (pos.ep_squares() & to))
+                return make<EN_PASSANT>(from, to);
+
+            if (type_of(mover) == pos.castling_king_piece(color)
+                && target != NO_PIECE && color_of(target) == color
+                && (pos.castling_rook_pieces(color) & type_of(target)))
+                return make<CASTLING>(from, to);
+        }
+
+        return make_move(from, to);
     }
 
     void convert_bin(
@@ -187,6 +240,8 @@ namespace Stockfish::Tools
                     record_started = true;
                     ss >> value;
                     Move move = has_fen ? UCI::to_move(tpos, value) : MOVE_NONE;
+                    if (move == MOVE_NONE && has_fen && !check_illegal_move)
+                        move = parse_representable_legacy_move(tpos, value);
                     std::uint16_t encoded = 0;
                     const char* encoding_reason = nullptr;
                     if (move == MOVE_NONE

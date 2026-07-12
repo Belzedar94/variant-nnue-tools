@@ -35,7 +35,12 @@ convert_bin [options]
   Standard-FEN en-passant targets that identify a consistent double pawn push
   are accepted even when X-FEN normalization omits the target because no
   opposing pawn can capture it.
-- `check_illegal_move <0|1>` - Filter out illegal moves (default: 1)
+- `check_illegal_move <0|1>` - Filter out illegal moves (default: 1). Setting
+  this to `0` accepts syntactically representable 8x8 coordinate moves without
+  checking legality. Historical 16-bit wire limits are always enforced; drops,
+  gating, unsupported promotions and other unrepresentable moves are still
+  filtered rather than truncated. Unchecked output is a compatibility surface
+  and is expected to fail the strict validator when a move is actually illegal.
 - `interpolate_eval <n>` - Interpolate evaluation scores (default: 0)
 - `src_score_min_value <n>` - Minimum value in source score range (default: 0.0)
 - `src_score_max_value <n>` - Maximum value in source score range (default: 1.0)
@@ -58,7 +63,8 @@ e
 ```
 
 `score`, `ply`, and `result` may be omitted and receive the historical defaults.
-`fen`, a legal representable `move`, and the `e` terminator are mandatory.
+`fen`, a representable `move`, and the `e` terminator are mandatory. With the
+default `check_illegal_move=1`, the move must also be legal.
 Malformed numeric fields, incomplete records, plies outside `0..65535`, results
 outside `-1..1`, and moves that do not fit the historical 16-bit wire are
 filtered explicitly. A zero-width source score range is a configuration error.
