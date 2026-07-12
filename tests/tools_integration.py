@@ -17,6 +17,10 @@ PADDING_OFFSET = 71
 REFUSAL_TEXT = "the path already exists; choose a new output name or remove it explicitly"
 SPECIAL_MOVES_SHA256 = "C8F5C7FEB92C5F10B3CC2C37E2685A6E9993C486E335BBD7EAA38C22B229B2AA"
 FIXED_SEED_GENERATION_SHA256 = "1E7A316656A77F013E42B4057E5C104A8408052A0EFA16C6ED5F8C40CC12E9CE"
+ATOMIC_DATA_SCHEMA_JSON = (
+    '{"schema_sha256":"758ac9239c2b1cff34cd10e185d9ee1bc7a400e2758bb1ce71171e1a1fa50a78",'
+    '"formats":{"legacy-atomic-v1":{"read":true,"write":true,"record_size":72}}}'
+)
 
 
 def run_engine(
@@ -71,6 +75,15 @@ def expect_refusal_without_change(engine, command, output_path):
     after = output_path.read_bytes()
     if after != before:
         raise AssertionError("rejected command modified existing output {}".format(output_path))
+
+
+def expect_atomic_data_schema(engine):
+    output = run_engine(engine, "atomic_data_schema")
+    json_lines = [line for line in output.splitlines() if line.lstrip().startswith("{")]
+    if json_lines != [ATOMIC_DATA_SCHEMA_JSON]:
+        raise AssertionError(
+            "atomic_data_schema did not emit exactly the normative JSON line:\n{}".format(output)
+        )
 
 
 def expect_validation_failure(engine, path, reason_fragment=None, extra_commands=None):
@@ -151,6 +164,8 @@ def main():
     nnue = Path(args.nnue).resolve() if args.nnue else None
     if nnue is not None and not nnue.is_file():
         raise AssertionError("NNUE file does not exist: {}".format(nnue))
+
+    expect_atomic_data_schema(engine)
 
     with tempfile.TemporaryDirectory(prefix="variant-nnue-tools-") as temp_name:
         root = Path(temp_name)
