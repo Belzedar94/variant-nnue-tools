@@ -9,6 +9,7 @@ import tempfile
 
 
 RECORD_SIZE = 72
+PACKED_SFEN_SIZE = 64
 MOVE_OFFSET = 66
 PLY_OFFSET = 68
 RESULT_OFFSET = 70
@@ -91,6 +92,30 @@ def record_field(data, record_index, offset, fmt):
     return struct.unpack_from(fmt, data, record_index * RECORD_SIZE + offset)[0]
 
 
+def packed_bit(data, bit):
+    return (data[bit // 8] >> (bit % 8)) & 1
+
+
+def read_lsb_bits(data, start, width):
+    return sum(packed_bit(data, start + offset) << offset for offset in range(width))
+
+
+def write_lsb_bits(data, start, width, value):
+    for offset in range(width):
+        bit = start + offset
+        mask = 1 << (bit % 8)
+        if value & (1 << offset):
+            data[bit // 8] |= mask
+        else:
+            data[bit // 8] &= ~mask
+
+
+def square_index(name):
+    if len(name) != 2 or name[0] not in "abcdefgh" or name[1] not in "12345678":
+        raise ValueError("invalid 8x8 square: {!r}".format(name))
+    return ord(name[0]) - ord("a") + (int(name[1]) - 1) * 8
+
+
 def main():
     parser = argparse.ArgumentParser(description="End-to-end tests for the legacy 72-byte data wire")
     parser.add_argument("--engine", required=True, help="Path to the built Fairy-Stockfish tools binary")
@@ -127,6 +152,11 @@ def main():
         standard_ep_binary = root / "standard-ep.bin"
         inconsistent_ep_plain = root / "inconsistent-ep.plain"
         inconsistent_ep_binary = root / "inconsistent-ep.bin"
+        packed_ep_plain = root / "packed-ep.plain"
+        packed_no_ep_plain = root / "packed-no-ep.plain"
+        packed_ep_binary = root / "packed-ep.bin"
+        packed_no_ep_binary = root / "packed-no-ep.bin"
+        inconsistent_packed_ep_binary = root / "inconsistent-packed-ep.bin"
         disabled_ep_plain = root / "disabled-ep.plain"
         disabled_ep_binary = root / "disabled-ep.bin"
         illegal_move_plain = root / "illegal-move.plain"
@@ -403,6 +433,69 @@ e
         )
         if inconsistent_ep_binary.exists():
             raise AssertionError("inconsistent en-passant FEN left an output file")
+
+        # Locate the packed EP-present bit by comparing otherwise identical
+        # canonical records. Then keep the rank valid while changing d6 to e6,
+        # where the board has no matching black double-pushed pawn. The move is
+        # deliberately unrelated to EP, so only the structural check can reject
+        # the corrupted record.
+        packed_ep_plain.write_text(
+            """fen 4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1
+move e1e2
+score 0
+ply 1
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        packed_no_ep_plain.write_text(
+            packed_ep_plain.read_text(encoding="utf-8").replace(
+                " w - d6 ", " w - - "
+            ),
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                packed_ep_plain, packed_ep_binary
+            ),
+        )
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                packed_no_ep_plain, packed_no_ep_binary
+            ),
+        )
+        packed_ep_data = bytearray(packed_ep_binary.read_bytes())
+        packed_no_ep_data = packed_no_ep_binary.read_bytes()
+        ep_flag_bit = next(
+            (
+                bit
+                for bit in range(PACKED_SFEN_SIZE * 8)
+                if packed_bit(packed_ep_data, bit)
+                != packed_bit(packed_no_ep_data, bit)
+            ),
+            None,
+        )
+        if ep_flag_bit is None:
+            raise AssertionError("packed EP and no-EP records were identical")
+        if not packed_bit(packed_ep_data, ep_flag_bit):
+            raise AssertionError("first packed difference was not the EP-present bit")
+        if read_lsb_bits(packed_ep_data, ep_flag_bit + 1, 7) != square_index("d6"):
+            raise AssertionError("discovered packed EP field did not encode d6")
+
+        write_lsb_bits(
+            packed_ep_data, ep_flag_bit + 1, 7, square_index("e6")
+        )
+        inconsistent_packed_ep_binary.write_bytes(packed_ep_data)
+        expect_validation_failure(
+            engine,
+            inconsistent_packed_ep_binary,
+            "inconsistent with a double pawn push",
+        )
 
         disabled_ep_plain.write_text(
             """fen rnbakbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBAKBNR b - e3 0 1

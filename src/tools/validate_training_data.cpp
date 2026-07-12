@@ -219,10 +219,28 @@ bool packed_shape_is_safe(const PackedSfen& packed,
             reason = "invalid en-passant square";
             return false;
         }
+        const Square target = Square(value);
         const Rank expected_rank = side_to_move == WHITE ? RANK_6 : RANK_3;
-        if (rank_of(Square(value)) != expected_rank)
+        if (rank_of(target) != expected_rank)
         {
             reason = "en-passant square is on the wrong rank";
+            return false;
+        }
+
+        // set_from_packed_sfen() preserves the encoded target verbatim, so a
+        // canonical re-pack alone cannot prove that it came from a double pawn
+        // push. Mirror the structural consistency required for plain FENs.
+        const Color moved_side = ~side_to_move;
+        const Direction push = pawn_push(moved_side);
+        const Square pawn_square = target + push;
+        const Square origin_square = target - push;
+        if (!(variant.enPassantRegion[side_to_move] & target)
+            || board[target].type != NO_PIECE_TYPE
+            || board[pawn_square].type != PAWN
+            || board[pawn_square].color != moved_side
+            || board[origin_square].type != NO_PIECE_TYPE)
+        {
+            reason = "en-passant square is inconsistent with a double pawn push";
             return false;
         }
     }
