@@ -562,8 +562,8 @@ e
         # pawn type. Its canonical record must not be forced through orthodox
         # vertical-pawn provenance checks.
         berolina_ep_plain.write_text(
-            """fen 4k3/8/8/8/2Pp4/8/8/4K3 b - d3 0 1
-move e8e7
+            """fen rnbqkbnr/ppp1pppp/8/8/2Pp4/8/PPPP1PPP/RNBQKBNR b KQkq d3 0 1
+move e8d7
 score 0
 ply 1
 result 0
@@ -574,7 +574,7 @@ e
         )
         berolina_no_ep_plain.write_text(
             berolina_ep_plain.read_text(encoding="utf-8").replace(
-                " b - d3 ", " b - - "
+                " b KQkq d3 ", " b KQkq - "
             ),
             encoding="utf-8",
             newline="\n",
