@@ -14,12 +14,17 @@ namespace Stockfish::Tools {
 inline constexpr std::string_view AtomicDataSchemaSha256 =
   "acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1";
 inline constexpr std::size_t LegacyAtomicV1RecordSize = 72;
+inline constexpr bool LegacyAtomicV1Available = DATA_SIZE == 512;
 
 inline constexpr std::string_view atomic_data_schema_json() noexcept
 {
-    return "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
-           "\"formats\":{\"legacy-atomic-v1\":{\"read\":true,\"write\":true,"
-           "\"record_size\":72}}}";
+    if constexpr (LegacyAtomicV1Available)
+        return "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
+               "\"formats\":{\"legacy-atomic-v1\":{\"read\":true,\"write\":true,"
+               "\"record_size\":72}}}";
+    else
+        return "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
+               "\"formats\":{}}";
 }
 
 }  // namespace Stockfish::Tools
