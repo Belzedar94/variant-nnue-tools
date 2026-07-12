@@ -2,9 +2,9 @@ name: ffishjs
 
 on:
   push:
-    branches: [ master, atomic ]
+    branches: [ master ]
   pull_request:
-    branches: [ master, atomic ]
+    branches: [ master ]
 
 env:
   EM_VERSION: 1.39.16

@@ -1,8 +1,12 @@
 # Stats
 
+Statistics are currently provided by the temporary `atomic-data-tools`
+backend. Atomic PV generation is owned by the pinned Atomic-Stockfish
+submodule.
+
 `gather_statistics` command allows gathering various statistics from a .bin file. The syntax is `gather_statistics (GROUP)* input_file FILENAME`. There can be many groups specified. Any statistic gatherer that belongs to at least one of the specified groups will be used.
 
-Simplest usage: `stockfish.exe gather_statistics all input_file a.bin`
+Simplest usage: `atomic-data-tools gather_statistics all input_file a.bin`
 
 Any name that doesn't designate an argument name or is not an argument will be interpreted as a group name.
 

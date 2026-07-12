@@ -1,3 +1,2 @@
-README.md merge=ours
 tests/js/test.js text eol=lf
 tests/pgn/*.pgn text eol=lf

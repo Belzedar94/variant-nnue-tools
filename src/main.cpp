@@ -45,6 +45,9 @@ int main(int argc, char* argv[]) {
   variants.init();
   CommandLine::init(argc, argv);
   UCI::init(Options);
+#ifdef ATOMIC_DATA_TOOLS
+  UCI::init_variant(variants.find("atomic")->second);
+#endif
   Tune::init();
   PSQT::init(variants.find(Options["UCI_Variant"])->second);
   Bitboards::init();

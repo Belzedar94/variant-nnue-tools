@@ -4,11 +4,9 @@ on:
     push:
       branches:
         - master
-        - atomic
     pull_request:
       branches:
         - master
-        - atomic
 
 jobs:
   build_wheels:

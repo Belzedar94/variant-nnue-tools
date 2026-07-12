@@ -39,7 +39,6 @@
 #ifndef NO_NNUE_TOOLS
 #include "tools/atomic_data_schema.h"
 #include "tools/validate_training_data.h"
-#include "tools/training_data_generator.h"
 #include "tools/training_data_generator_nonpv.h"
 #include "tools/puzzle_generator.h"
 #include "tools/convert.h"
@@ -352,8 +351,12 @@ void search_mcts_cmd(Position& pos, istringstream& is)
             variants.parse_istream<true>(ss);
         else
         {
+#ifdef ATOMIC_DATA_TOOLS
+            sync_cout << "Atomic data tools reject runtime variant definitions" << sync_endl;
+#else
             variants.parse_istream<false>(ss);
             Options["UCI_Variant"].set_combo(variants.get_keys());
+#endif
         }
     }
     else
@@ -514,6 +517,9 @@ void UCI::loop(int argc, char* argv[]) {
                            : token == "ucci" ? UCCI
                            : XBOARD;
           string defaultVariant = string(
+#ifdef ATOMIC_DATA_TOOLS
+                                                           "atomic");
+#else
 #ifdef LARGEBOARDS
                                            CurrentProtocol == USI  ? "shogi"
                                          : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "xiangqi"
@@ -522,6 +528,7 @@ void UCI::loop(int argc, char* argv[]) {
                                          : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "minixiangqi"
 #endif
                                                            : "chess");
+#endif
           Options["UCI_Variant"].set_default(defaultVariant);
           std::istringstream ss("startpos");
           position(pos, ss, states);
@@ -536,7 +543,26 @@ void UCI::loop(int argc, char* argv[]) {
       else if (CurrentProtocol == XBOARD)
           XBoard::stateMachine->process_command(token, is);
 
-      else if (token == "setoption")  setoption_from_stream(is);
+      else if (token == "setoption")
+      {
+#ifdef ATOMIC_DATA_TOOLS
+          const std::streampos start = is.tellg();
+          string marker, name, value;
+          is >> marker;
+          while (is >> marker && marker != "value")
+              name += (name.empty() ? "" : " ") + marker;
+          while (is >> marker)
+              value += (value.empty() ? "" : " ") + marker;
+          is.clear();
+          is.seekg(start);
+          if (name == "UCI_Variant" && value != "atomic")
+          {
+              sync_cout << "Atomic data tools only support UCI_Variant=atomic" << sync_endl;
+              continue;
+          }
+#endif
+          setoption_from_stream(is);
+      }
       // UCCI-specific banmoves command
       else if (token == "banmoves")
           while (is >> token)
@@ -580,9 +606,10 @@ void UCI::loop(int argc, char* argv[]) {
           position(pos, is, states);
       }
 #ifndef NO_NNUE_TOOLS
+#ifdef ATOMIC_DATA_TOOLS
       else if (token == "atomic_data_schema")
           sync_cout << Tools::atomic_data_schema_json() << sync_endl;
-      else if (token == "generate_training_data") Tools::generate_training_data(is);
+#endif
       else if (token == "generate_training_data_nonpv") Tools::generate_training_data_nonpv(is);
       else if (token == "generate_puzzles") Tools::generate_puzzles(is);
       else if (token == "convert") Tools::convert(is);

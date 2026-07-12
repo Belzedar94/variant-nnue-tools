@@ -1,8 +1,13 @@
 # generate_puzzles
 
+This command remains temporarily in the Fairy-based `atomic-data-tools`
+backend while its Atomic use is inventoried. It is not part of the
+authoritative PV dataset path.
+
 `generate_puzzles` command allows generation of puzzle positions from self-play games. Puzzles are tactical positions that can be used for training, testing, or creating puzzle databases. The generator introduces random moves to diversify positions, uses fixed depth evaluation, and applies filters to ensure quality puzzle positions.
 
-As all commands in stockfish `generate_puzzles` can be invoked either from command line (as `stockfish.exe generate_puzzles ...`, but this is not recommended because it's not possible to specify UCI options before `generate_puzzles` executes) or in the interactive prompt.
+It can be invoked from `atomic-data-tools` or in the interactive prompt, but
+interactive setup is recommended so UCI options are applied first.
 
 It is recommended to keep the `EnableTranspositionTable` UCI option at the default `true` value as it will make the generation process faster without noticeably harming the uniformity of the data.
 

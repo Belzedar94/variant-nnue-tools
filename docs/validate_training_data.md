@@ -1,8 +1,12 @@
 # validate_training_data
 
+This command is provided by the temporary `atomic-data-tools` backend. Atomic
+PV generation is owned by the pinned Atomic-Stockfish submodule.
+
 `validate_training_data` allows validation of training data of types `.plain` and `.bin`.
 
-As all commands in stockfish `validate_training_data` can be invoked either from command line (as `stockfish.exe validate_training_data ...`) or in the interactive prompt.
+It can be invoked from the command line as
+`atomic-data-tools validate_training_data ...` or in the interactive prompt.
 
 The syntax of this command is as follows:
 ```

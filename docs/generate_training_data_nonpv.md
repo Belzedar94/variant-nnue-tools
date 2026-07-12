@@ -1,8 +1,14 @@
 # generate_training_data_nonpv
 
+This non-PV implementation remains temporarily in the Fairy-based
+`atomic-data-tools` backend while its actual Atomic pipeline use is
+inventoried. It is not the authoritative PV generator; use the pinned
+Atomic-Stockfish `data-generator` target for production datasets.
+
 `generate_training_data_nonpv` command allows generation of training data from self-play in a manner that suits training better than traditional games. It plays fixed nodes self play games for exploration and records [some of] the evaluated positions. Then rescores them with fixed depth search.
 
-As all commands in stockfish `generate_training_data_nonpv` can be invoked either from command line (as `stockfish.exe generate_training_data_nonpv ...`, but this is not recommended because it's not possible to specify UCI options before `generate_training_data_nonpv` executes) or in the interactive prompt.
+It can be invoked from `atomic-data-tools` or in the interactive prompt, but
+interactive setup is recommended so UCI options are applied first.
 
 It is recommended to set the `PruneAtShallowDepth` UCI option to `false` as it will increase the quality of fixed depth searches.
 

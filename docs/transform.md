@@ -1,5 +1,9 @@
 # Transform
 
+Transforms are currently provided by the temporary `atomic-data-tools`
+backend. Atomic PV generation is owned by the pinned Atomic-Stockfish
+submodule.
+
 `transform` command exposes subcommands that perform some specific transformation over data. The call syntax is `transform <subcommand>`. Currently implemented subcommands are listed and described below.
 
 All transform outputs use exclusive creation and reject an existing path.

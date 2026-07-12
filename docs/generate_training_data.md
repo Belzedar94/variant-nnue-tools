@@ -1,76 +1,76 @@
-# generate_training_data
+# Atomic PV training-data generation
 
-`generate_training_data` command allows generation of training data from self-play in a manner that suits training better than traditional games. It introduces random moves to diversify openings, and fixed depth evaluation.
+PV self-play generation is owned by the pinned Atomic-Stockfish submodule and
+is no longer compiled into the temporary Fairy-based `atomic-data-tools`
+backend.
 
-As all commands in stockfish `generate_training_data` can be invoked either from command line (as `stockfish.exe generate_training_data ...`, but this is not recommended because it's not possible to specify UCI options before `generate_training_data` executes) or in the interactive prompt.
+Build the authoritative generator from the repository root:
 
-It is recommended to set the `PruneAtShallowDepth` UCI option to `false` as it will increase the quality of fixed depth searches.
+```bash
+make -j2 ARCH=x86-64 data-generator
+```
 
-It is recommended to keep the `EnableTranspositionTable` UCI option at the default `true` value as it will make the generation process faster without noticeably harming the uniformity of the data.
+The artifact is
+`engine/Atomic-Stockfish/src/atomic-stockfish-data-generator` (or `.exe` for
+`COMP=mingw`). Its exact commit and shared schema are authenticated by
+`atomic-engine.lock.json` and `tests/atomic_engine_pin.py`.
 
-For Atomic NNUE dataset generation, select `UCI_Variant=atomic`, load the
-intended network, and set `Use NNUE=pure` before running the command. `pure` is
-reserved for data generation; use `true` for normal engine play and strength
-testing.
+## Required setup
 
-Output paths are exclusive: an existing `.bin` file is rejected and is never
-appended to or overwritten.
+The current Legacy Atomic V1 generator requires a compatible Atomic NNUE and
+`Use NNUE=pure`. `pure` is used only for dataset targets; games and Elo tests
+use `Use NNUE=true` or `false`.
 
-`generate_training_data` takes named parameters in the form of `generate_training_data param_1_name param_1_value param_2_name param_2_value ...`.
+```text
+uci
+setoption name EvalFile value atomic_run3b_e202_l05.nnue
+setoption name Use NNUE value pure
+setoption name Threads value 1
+setoption name Hash value 512
+isready
+generate_training_data depth 8 count 100000 output_file_name atomic.bin data_format bin seed 20260711
+quit
+```
 
-Currently the following options are available:
+The resolved non-zero 64-bit seed is printed as `PRNG::initial_seed`. Record
+that value together with the engine commit, network SHA-256, book, options and
+thread count. Byte-exact replay requires the same inputs and `Threads=1`.
 
-`set_recommended_uci_options` - this is a modifier not a parameter, no value follows it. If specified then some UCI options are set to recommended values.
+## Supported parameters
 
-`depth` - sets minimum and maximum depth of evaluation of each position. Default: 3.
+The Atomic generator accepts named parameters. Important controls include:
 
-`min_depth` - minimum depth of evaluation of each position. If not specified then the same as `depth`.
+- `depth`, or `min_depth` plus `max_depth`;
+- `nodes` as an optional per-search node cap;
+- `count` for the exact requested record count;
+- `write_min_ply` and exclusive `write_max_ply`;
+- `random_move_min_ply`, `random_move_max_ply` and `random_move_count`;
+- `random_move_like_apery`;
+- `random_multi_pv`, `random_multi_pv_diff` and `random_multi_pv_depth`;
+- `eval_limit` and `eval_diff_limit`;
+- `keep_draws`;
+- `filter_captures`, `filter_checks` and `filter_promotions`;
+- `adjudicate_draws_by_score` and
+  `adjudicate_draws_by_insufficient_material`;
+- `book`, `save_every`, `random_file_name`, `output_file_name`, `data_format`
+  and `seed`.
 
-`max_depth` - maximum depth of evaluation of each position. If not specified then the same as `depth`.
+`data_format` must be `bin`. Invalid or inverted ranges, an empty write
+window, unsupported positions, invalid networks and existing output paths are
+hard failures. The generator never appends to or overwrites a dataset.
 
-`nodes` - the number of nodes to use for evaluation of each position. This number is multiplied by the number of PVs of the current search. This does NOT override the `depth` and `depth2` options. If specified then whichever of depth or nodes limit is reached first applies.
+## Compatibility limits
 
-`count` - the number of training data entries to generate. 1 entry == 1 position. Default: 100000000 (100M).
+Legacy Atomic V1 writes fixed 72-byte records with a 16-bit historical move
+wire. It supports normal moves, promotions, en passant and orthodox-layout
+castling. It cannot encode Atomic960 rook origins, missing kings, rule-50
+clocks above 127, drops, gating or large-board moves.
 
-`output_file_name` - the name of the file to output to. If the extension is not present or doesn't match the selected training data format the right extension will be appended. Default: training_data
+The generator advertises `read:false, write:true` through
+`atomic_data_schema`. The tools backend advertises `read:true, write:true`
+because conversion can create Legacy V1 files. The trainer advertises
+`read:true, write:false`.
 
-`eval_limit` - evaluations with higher absolute value than this will not be written and will terminate a self-play game. Should not exceed 10000 which is VALUE_KNOWN_WIN, but is only hardcapped at mate in 2 (\~30000). Default: 3000
-
-`random_move_min_ply` - the minimal ply at which a random move may be executed instead of a move chosen by search. Default: 1.
-
-`random_move_max_ply` - the maximal ply at which a random move may be executed instead of a move chosen by search. Default: 24.
-
-`random_move_count` - maximum number of random moves in a single self-play game. Default: 5.
-
-`random_move_like_apery` - either 0 or 1. If 1 then random king moves will be followed by a random king move from the opponent whenever possible with 50% probability. Default: 0.
-
-`random_multi_pv` - the number of PVs used for determining the random move. If zero then a truly random move will be chosen. If non-zero then a multiPV search will be performed the random move will be one of the moves chosen by the search.
-
-`random_multi_pv_diff` - Makes the multiPV random move selection consider only moves that are at most `random_multi_pv_diff` worse than the next best move. Default: 100.
-
-`random_multi_pv_depth` - the depth to use for multiPV search for random move. Default: `depth2`.
-
-`write_min_ply` - minimum ply for which the training data entry will be emitted. Default: 5.
-
-`write_max_ply` - maximum ply for which the training data entry will be emitted. Default: 400.
-
-`book` - a path to an opening book to use for the starting positions. Currently only .epd format is supported. If not specified then the starting position is always the variant starting position.
-
-`save_every` - the number of training data entries per file. If not specified then there will be always one file. If specified there may be more than one file generated (each having at most `save_every` training data entries) and each file will have a unique number attached.
-
-`random_file_name` - if specified then the output filename will be chosen randomly. Overrides `output_file_name`.
-
-`keep_draws` - between 0 and 1. Limit on fraction of drawn games that will be emitted. Default: 1.
-
-`adjudicate_draws_by_score` - either 0 or 1. If 1 then drawn games will be adjudicated when the score remains 0 for at least 8 plies after ply 80. Default: 1.
-
-`adjudicate_draws_by_insufficient_mating_material` - either 0 or 1. If 1 then position with insufficient material will be adjudicated as draws. Default: 1.
-
-`data_format` - format of the training data to use. Only `bin` is supported. Default: `bin`.
-
-`seed` - seed for the PRNG. It can be a number or a string; strings use a stable
-64-bit hash. An omitted seed is resolved once from the clock. In every case the
-resolved decimal value is printed as `PRNG::initial_seed`; record it and reuse it
-to replay the random streams. Byte-identical output additionally requires the
-same binary, inputs/options, and `Threads=1`; multi-thread record ordering is not
-defined.
+Run the generator's full fixture suite and validate its output with this
+repository's backend before training. The dedicated Atomic workflow performs
+that cross-component check with a deterministic synthetic NNUE.
