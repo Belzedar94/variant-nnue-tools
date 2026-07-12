@@ -18,9 +18,9 @@ void test_atomic_data_schema_handshake()
 
     static_assert(LegacyAtomicV1RecordSize == sizeof(PackedSfenValue));
     assert(AtomicDataSchemaSha256
-           == "758ac9239c2b1cff34cd10e185d9ee1bc7a400e2758bb1ce71171e1a1fa50a78");
+           == "acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1");
     assert(atomic_data_schema_json()
-           == "{\"schema_sha256\":\"758ac9239c2b1cff34cd10e185d9ee1bc7a400e2758bb1ce71171e1a1fa50a78\","
+           == "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
               "\"formats\":{\"legacy-atomic-v1\":{\"read\":true,\"write\":true,"
               "\"record_size\":72}}}");
 }

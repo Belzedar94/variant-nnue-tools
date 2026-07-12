@@ -4,15 +4,20 @@
 #include <cstddef>
 #include <string_view>
 
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) \
+  && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#  error "legacy-atomic-v1 requires a little-endian host"
+#endif
+
 namespace Stockfish::Tools {
 
 inline constexpr std::string_view AtomicDataSchemaSha256 =
-  "758ac9239c2b1cff34cd10e185d9ee1bc7a400e2758bb1ce71171e1a1fa50a78";
+  "acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1";
 inline constexpr std::size_t LegacyAtomicV1RecordSize = 72;
 
 inline constexpr std::string_view atomic_data_schema_json() noexcept
 {
-    return "{\"schema_sha256\":\"758ac9239c2b1cff34cd10e185d9ee1bc7a400e2758bb1ce71171e1a1fa50a78\","
+    return "{\"schema_sha256\":\"acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1\","
            "\"formats\":{\"legacy-atomic-v1\":{\"read\":true,\"write\":true,"
            "\"record_size\":72}}}";
 }
