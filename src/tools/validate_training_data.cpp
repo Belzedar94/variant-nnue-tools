@@ -220,27 +220,107 @@ bool packed_shape_is_safe(const PackedSfen& packed,
             return false;
         }
         const Square target = Square(value);
-        const Rank expected_rank = side_to_move == WHITE ? RANK_6 : RANK_3;
-        if (rank_of(target) != expected_rank)
+        // set_from_packed_sfen() preserves the encoded target verbatim, so a
+        // canonical re-pack alone cannot prove that it belongs to the selected
+        // variant or is empty.
+        if (!(variant.enPassantRegion[side_to_move] & target)
+            || board[target].type != NO_PIECE_TYPE)
         {
-            reason = "en-passant square is on the wrong rank";
+            reason = "en-passant square is inconsistent with the selected variant";
             return false;
         }
 
-        // set_from_packed_sfen() preserves the encoded target verbatim, so a
-        // canonical re-pack alone cannot prove that it came from a double pawn
-        // push. Mirror the structural consistency required for plain FENs.
+        // Reconstruct at least one possible preceding initial move. Standard
+        // pawns create EP after a double/triple push; Betza pieces (Berolina,
+        // etc.) create it on squares between an initial-only origin/destination.
         const Color moved_side = ~side_to_move;
         const Direction push = pawn_push(moved_side);
-        const Square pawn_square = target + push;
-        const Square origin_square = target - push;
-        if (!(variant.enPassantRegion[side_to_move] & target)
-            || board[target].type != NO_PIECE_TYPE
-            || board[pawn_square].type != PAWN
-            || board[pawn_square].color != moved_side
-            || board[origin_square].type != NO_PIECE_TYPE)
+        bool has_provenance = false;
+
+        // Keep the common standard-pawn path linear in board size. Dataset
+        // validators routinely scan millions of positions, so only enter the
+        // more general Betza search when no pawn push explains the target.
+        for (Square origin = SQ_A1; origin <= SQ_H8 && !has_provenance; ++origin)
         {
-            reason = "en-passant square is inconsistent with a double pawn push";
+            if (board[origin].type != NO_PIECE_TYPE)
+                continue;
+
+            const int one_index = int(origin) + int(push);
+            const int two_index = int(origin) + 2 * int(push);
+            const int three_index = int(origin) + 3 * int(push);
+            if ((variant.doubleStepRegion[moved_side] & origin)
+                && two_index >= int(SQ_A1) && two_index <= int(SQ_H8))
+            {
+                const Square one = Square(one_index);
+                const Square destination = Square(two_index);
+                has_provenance = target == one
+                              && board[one].type == NO_PIECE_TYPE
+                              && board[destination].type == PAWN
+                              && board[destination].color == moved_side;
+            }
+            if (!has_provenance && (variant.tripleStepRegion[moved_side] & origin)
+                && three_index >= int(SQ_A1) && three_index <= int(SQ_H8))
+            {
+                const Square one = Square(one_index);
+                const Square two = Square(two_index);
+                const Square destination = Square(three_index);
+                has_provenance = (target == one || target == two)
+                              && board[one].type == NO_PIECE_TYPE
+                              && board[two].type == NO_PIECE_TYPE
+                              && board[destination].type == PAWN
+                              && board[destination].color == moved_side;
+            }
+        }
+
+        if (!has_provenance)
+        {
+            std::array<Bitboard, PIECE_TYPE_NB> destinations_by_type{};
+            Bitboard occupied = 0;
+            for (Square destination = SQ_A1; destination <= SQ_H8; ++destination)
+            {
+                const Occupant occupant = board[destination];
+                if (occupant.type != NO_PIECE_TYPE)
+                    occupied |= destination;
+                if (occupant.type == NO_PIECE_TYPE || occupant.type == PAWN
+                    || occupant.color != moved_side)
+                    continue;
+                destinations_by_type[occupant.type] |= destination;
+            }
+
+            for (Square origin = SQ_A1; origin <= SQ_H8 && !has_provenance; ++origin)
+            {
+                if (board[origin].type != NO_PIECE_TYPE)
+                    continue;
+                if (!(variant.doubleStepRegion[moved_side] & origin))
+                    continue;
+                for (PieceSet types = variant.pieceTypes & ~piece_set(PAWN);
+                     types && !has_provenance;)
+                {
+                    const PieceType type = pop_lsb(types);
+                    const PieceType move_type = type == KING ? variant.kingType : type;
+                    const Bitboard mobility = variant.mobilityRegion[moved_side][type]
+                                                ? variant.mobilityRegion[moved_side][type]
+                                                : AllSquares;
+                    Bitboard destinations = destinations_by_type[type] & mobility;
+                    while (destinations && !has_provenance)
+                    {
+                        const Square destination = pop_lsb(destinations);
+                        const Bitboard previous_occupied =
+                          (occupied - destination) | origin;
+                        const Bitboard initial_only =
+                          PseudoMoves[1][moved_side][move_type][origin]
+                          & ~PseudoMoves[0][moved_side][move_type][origin]
+                          & moves_bb<true>(moved_side, move_type, origin,
+                                           previous_occupied);
+                        has_provenance = (initial_only & destination)
+                                      && (between_bb(origin, destination) & target);
+                    }
+                }
+            }
+        }
+        if (!has_provenance)
+        {
+            reason = "en-passant square has no possible initial-move provenance";
             return false;
         }
     }

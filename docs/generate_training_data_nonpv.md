@@ -24,7 +24,7 @@ Currently the following options are available:
 
 `exploration_max_nodes` - the max number of nodes to use for exploration during selfplay. The number of nodes is chosen from a uniform distribution between min and max. Default: 15000.
 
-`exploration_save_rate` - the ratio of positions seen during exploration self play games that are saved for later rescoring. Default: 0.01 (meaning 1 in 100 positions seen during search get saved for rescoring).
+`exploration_save_rate` - the ratio of positions seen during exploration self play games that are saved for later rescoring. It must be greater than 0 and at most 1. Default: 0.01 (meaning 1 in 100 positions seen during search get saved for rescoring).
 
 `output_file` - the name of the file to output to. If the extension is not present or doesn't match the selected training data format the right extension will be appended. Default: generated_gensfen_nonpv
 
@@ -34,7 +34,7 @@ Currently the following options are available:
 
 `exploration_min_pieces` - the min number of pieces in the self play games to start the fixed depth search. Note that even if there's N pieces on the board the fixed nodes search usually reaches positions with less pieces and they are saved too. Default: 8.
 
-`exploration_max_ply` the max ply for the exploration self play. Default: 200.
+`exploration_max_ply` the max ply for the exploration self play. Minimum: 1. Default: 200.
 
 `smart_fen_skipping` - this is a flag option. When specified some position that are not good candidates for teaching are removed from the output. This includes positions where the best move is a capture or promotion, and position where a king is in check.
 

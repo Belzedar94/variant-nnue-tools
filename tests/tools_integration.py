@@ -144,6 +144,8 @@ def main():
         pgn_binary = root / "empty-pgn.bin"
         generated = root / "generated.bin"
         generated_repeat = root / "generated-repeat.bin"
+        invalid_nonpv_output = root / "invalid-nonpv-zero-ply.bin"
+        invalid_nonpv_rate_output = root / "invalid-nonpv-zero-rate.bin"
         filtered_plain = root / "filtered.plain"
         filtered_binary = root / "filtered.bin"
         stats_output = root / "stats.txt"
@@ -157,6 +159,8 @@ def main():
         packed_ep_binary = root / "packed-ep.bin"
         packed_no_ep_binary = root / "packed-no-ep.bin"
         inconsistent_packed_ep_binary = root / "inconsistent-packed-ep.bin"
+        berolina_ep_plain = root / "berolina-ep.plain"
+        berolina_ep_binary = root / "berolina-ep.bin"
         disabled_ep_plain = root / "disabled-ep.plain"
         disabled_ep_binary = root / "disabled-ep.bin"
         illegal_move_plain = root / "illegal-move.plain"
@@ -469,6 +473,12 @@ e
                 packed_no_ep_plain, packed_no_ep_binary
             ),
         )
+        if packed_ep_binary.stat().st_size != RECORD_SIZE:
+            raise AssertionError("canonical packed EP fixture did not produce one record")
+        if packed_no_ep_binary.stat().st_size != RECORD_SIZE:
+            raise AssertionError("canonical no-EP fixture did not produce one record")
+        run_engine(engine, "validate_training_data {}".format(packed_ep_binary))
+        run_engine(engine, "validate_training_data {}".format(packed_no_ep_binary))
         packed_ep_data = bytearray(packed_ep_binary.read_bytes())
         packed_no_ep_data = packed_no_ep_binary.read_bytes()
         ep_flag_bit = next(
@@ -494,7 +504,37 @@ e
         expect_validation_failure(
             engine,
             inconsistent_packed_ep_binary,
-            "inconsistent with a double pawn push",
+            "no possible initial-move provenance",
+        )
+
+        # Berolina creates EP targets from a diagonal initial move by a custom
+        # pawn type. Its canonical record must not be forced through orthodox
+        # vertical-pawn provenance checks.
+        berolina_ep_plain.write_text(
+            """fen 4k3/8/8/8/2Pp4/8/8/4K3 b - d3 0 1
+move e8e7
+score 0
+ply 1
+result 0
+e
+""",
+            encoding="utf-8",
+            newline="\n",
+        )
+        berolina_option = ["setoption name UCI_Variant value berolina"]
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                berolina_ep_plain, berolina_ep_binary
+            ),
+            extra_commands=berolina_option,
+        )
+        if berolina_ep_binary.stat().st_size != RECORD_SIZE:
+            raise AssertionError("canonical Berolina EP fixture did not produce one record")
+        run_engine(
+            engine,
+            "validate_training_data {}".format(berolina_ep_binary),
+            extra_commands=berolina_option,
         )
 
         disabled_ep_plain.write_text(
@@ -623,6 +663,36 @@ e
         )
         if invalid_config_output.exists():
             raise AssertionError("invalid generator configuration created an output file")
+
+        invalid_nonpv_result = run_engine(
+            engine,
+            (
+                "generate_training_data_nonpv count 1 exploration_max_ply 0 "
+                "output_file {} data_format bin seed tools-wire-test"
+            ).format(invalid_nonpv_output),
+            expect_success=False,
+            timeout=5,
+            failure_text="Invalid generate_training_data_nonpv parameter range",
+        )
+        if invalid_nonpv_output.exists():
+            raise AssertionError("zero-ply non-PV generation created an output file")
+        if "INFO: Executing generate_training_data_nonpv command" in invalid_nonpv_result:
+            raise AssertionError("zero-ply non-PV generation reached generator setup")
+
+        invalid_nonpv_rate_result = run_engine(
+            engine,
+            (
+                "generate_training_data_nonpv count 1 exploration_save_rate 0 "
+                "output_file {} data_format bin seed tools-wire-test"
+            ).format(invalid_nonpv_rate_output),
+            expect_success=False,
+            timeout=5,
+            failure_text="Invalid generate_training_data_nonpv parameter range",
+        )
+        if invalid_nonpv_rate_output.exists():
+            raise AssertionError("zero-rate non-PV generation created an output file")
+        if "INFO: Executing generate_training_data_nonpv command" in invalid_nonpv_rate_result:
+            raise AssertionError("zero-rate non-PV generation reached generator setup")
 
         chess960_output = root / "invalid-chess960.bin"
         run_engine(

@@ -480,10 +480,10 @@ namespace Stockfish::Tools
             || params.exploration_min_nodes < 0
             || params.exploration_max_nodes < params.exploration_min_nodes
             || params.exploration_min_pieces < 0
-            || params.exploration_max_ply < 0
+            || params.exploration_max_ply <= 0
             || params.exploration_max_ply > std::numeric_limits<std::uint16_t>::max()
             || !std::isfinite(params.exploration_save_rate)
-            || params.exploration_save_rate < 0 || params.exploration_save_rate > 1
+            || params.exploration_save_rate <= 0 || params.exploration_save_rate > 1
             || params.output_file_name.empty())
         {
             cout << "ERROR: Invalid generate_training_data_nonpv parameter range.\n";
