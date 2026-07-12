@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "submodule": {
+    "name": "engine/Atomic-Stockfish",
+    "path": "engine/Atomic-Stockfish",
+    "url": "https://github.com/Belzedar94/Atomic-Stockfish.git",
+    "commit": "d1d04c34834232c34ce76ed226923e8191f711da",
+    "required_ref": "refs/remotes/origin/main"
+  },
+  "data_schema": {
+    "path": "schemas/atomic-schema.json",
+    "sha256": "acca0f551f1c012c31a6c727dedccaebb7b5ebbc46810edb87e31bb208d5abe1",
+    "schema_id": "legacy-atomic-v1",
+    "variant": "atomic",
+    "record_size": 72,
+    "atomic960": false
+  },
+  "build_contract": {
+    "playing_target": "build",
+    "data_generator_target": "data-generator",
+    "playing_artifacts": {
+      "linux": "src/atomic-stockfish",
+      "windows": "src/atomic-stockfish.exe"
+    },
+    "data_generator_artifacts": {
+      "linux": "src/atomic-stockfish-data-generator",
+      "windows": "src/atomic-stockfish-data-generator.exe"
+    }
+  }
+}

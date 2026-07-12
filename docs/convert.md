@@ -1,8 +1,12 @@
 # Convert Commands
 
+These commands are provided by the temporary `atomic-data-tools` backend.
+Atomic PV generation is owned by the pinned Atomic-Stockfish submodule.
+
 The conversion functionality has been split into three separate commands: `convert_bin`, `convert_plain`, and `convert_epd`. Each command serves a specific conversion purpose for training data.
 
-As with all commands in stockfish, these can be invoked either from the command line (as `stockfish.exe convert_bin ...`) or in the interactive prompt.
+They can be invoked from the command line (for example,
+`atomic-data-tools convert_bin ...`) or in the interactive prompt.
 
 Note that you will need to set the correct variant with the `UCI_Variant` option before converting data for games other than chess. 
 

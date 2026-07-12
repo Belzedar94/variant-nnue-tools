@@ -4,12 +4,10 @@ on:
     branches:
       - master
       - tools
-      - atomic
   pull_request:
     branches:
       - master
       - tools
-      - atomic
 jobs:
   fairy:
     name: ${{ matrix.config.name }}

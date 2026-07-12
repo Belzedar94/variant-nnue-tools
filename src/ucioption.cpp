@@ -75,6 +75,13 @@ void on_enable_transposition_table(const Option& o) {
 }
 
 void on_variant_path(const Option& o) {
+#ifdef ATOMIC_DATA_TOOLS
+    // The transition backend is deliberately tied to the built-in Atomic
+    // rules.  Loading external variant definitions would make the advertised
+    // schema depend on mutable runtime configuration.
+    if (std::string(o) != "<empty>" && !std::string(o).empty())
+        sync_cout << "Atomic data tools reject runtime variant definitions" << sync_endl;
+#else
     std::stringstream ss((std::string)o);
     std::string path;
 
@@ -82,6 +89,7 @@ void on_variant_path(const Option& o) {
         variants.parse<false>(path);
 
     Options["UCI_Variant"].set_combo(variants.get_keys());
+#endif
 }
 void on_variant_set(const Option &o) {
     // Re-initialize NNUE
@@ -199,7 +207,11 @@ void init(OptionsMap& o) {
   o["Slow Mover"]            << Option(100, 10, 1000);
   o["nodestime"]             << Option(0, 0, 10000);
   o["UCI_Chess960"]          << Option(false);
+#ifdef ATOMIC_DATA_TOOLS
+  o["UCI_Variant"]           << Option("atomic", {"atomic"}, on_variant_change);
+#else
   o["UCI_Variant"]           << Option("chess", variants.get_keys(), on_variant_change);
+#endif
   o["UCI_AnalyseMode"]       << Option(false);
   o["UCI_LimitStrength"]     << Option(false);
   o["UCI_Elo"]               << Option(1350, 500, 2850);

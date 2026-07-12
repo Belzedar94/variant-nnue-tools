@@ -1,0 +1,215 @@
+name: Atomic tools
+
+on:
+  push:
+    branches: [atomic]
+  pull_request:
+    branches: [atomic]
+
+concurrency:
+  group: atomic-tools-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ATOMIC_SYNTHETIC_NNUE_SHA256: 9CF054CA00B82AB53A34473DE52D1104AEDDAA19B2E7B24091B5E613AF485985
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC
+            comp: gcc
+          - name: Clang
+            comp: clang
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Verify immutable engine pin
+        run: |
+          if [ "$(git -C engine/Atomic-Stockfish rev-parse --is-shallow-repository)" = true ]; then
+            git -C engine/Atomic-Stockfish fetch --no-tags --unshallow origin main
+          else
+            git -C engine/Atomic-Stockfish fetch --no-tags origin main
+          fi
+          python3 tests/atomic_engine_pin.py
+          python3 tests/test_atomic_engine_pin.py
+      - name: Build and test Legacy V1 tools backend
+        run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} test
+      - name: Build pinned playing engine
+        run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} playing-engine
+      - name: Build pinned data generator
+        run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} data-generator
+      - name: Run pinned Legacy Atomic V1 C++ unit
+        run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} engine-legacy-unit
+      - name: Create deterministic synthetic Atomic network
+        run: >-
+          python3 engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
+          --output "$RUNNER_TEMP/atomic-zero.nnue"
+      - name: Cross-component wrapper fixture
+        run: >-
+          python3 tests/atomic_wrapper_integration.py
+          --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
+          --tools src/atomic-data-tools
+          --net "$RUNNER_TEMP/atomic-zero.nnue"
+      - name: Full Atomic generator fixtures through tools validator
+        run: >-
+          python3 engine/Atomic-Stockfish/tests/data_generator.py
+          --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
+          --normal-engine engine/Atomic-Stockfish/src/atomic-stockfish
+          --tools-engine src/atomic-data-tools
+          --net "$RUNNER_TEMP/atomic-zero.nnue"
+          --expected-net-sha256 "$ATOMIC_SYNTHETIC_NNUE_SHA256"
+
+  windows:
+    name: Windows MinGW
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2.31.1
+        with:
+          msystem: mingw64
+          path-type: inherit
+          install: mingw-w64-x86_64-gcc make
+      - name: Verify immutable engine pin
+        run: |
+          if [ "$(git -C engine/Atomic-Stockfish rev-parse --is-shallow-repository)" = true ]; then
+            git -C engine/Atomic-Stockfish fetch --no-tags --unshallow origin main
+          else
+            git -C engine/Atomic-Stockfish fetch --no-tags origin main
+          fi
+          python tests/atomic_engine_pin.py
+          python tests/test_atomic_engine_pin.py
+      - name: Build and test Legacy V1 tools backend
+        run: make -j2 ARCH=x86-64 COMP=mingw test
+      - name: Build pinned playing engine
+        run: make -j2 ARCH=x86-64 COMP=mingw playing-engine
+      - name: Build pinned data generator
+        run: make -j2 ARCH=x86-64 COMP=mingw data-generator
+      - name: Run pinned Legacy Atomic V1 C++ unit
+        run: make -j2 ARCH=x86-64 COMP=mingw engine-legacy-unit
+      - name: Create deterministic synthetic Atomic network
+        run: >-
+          python engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
+          --output "$RUNNER_TEMP/atomic-zero.nnue"
+      - name: Cross-component wrapper fixture
+        run: >-
+          python tests/atomic_wrapper_integration.py
+          --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator.exe
+          --tools src/atomic-data-tools.exe
+          --net "$RUNNER_TEMP/atomic-zero.nnue"
+      - name: Full Atomic generator fixtures through tools validator
+        run: >-
+          python engine/Atomic-Stockfish/tests/data_generator.py
+          --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator.exe
+          --normal-engine engine/Atomic-Stockfish/src/atomic-stockfish.exe
+          --tools-engine src/atomic-data-tools.exe
+          --net "$RUNNER_TEMP/atomic-zero.nnue"
+          --expected-net-sha256 "$ATOMIC_SYNTHETIC_NNUE_SHA256"
+
+  memory-sanitizers:
+    name: Linux ASan + UBSan wrapper E2E
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      # The Threads=2 implementation belongs to the exact pinned generator.
+      # Its engine workflow already executes the real TSan smoke; assert that
+      # contract here instead of recompiling the same generator a third time.
+      - name: Verify pin and delegated Threads=2 TSan contract
+        run: |
+          if [ "$(git -C engine/Atomic-Stockfish rev-parse --is-shallow-repository)" = true ]; then
+            git -C engine/Atomic-Stockfish fetch --no-tags --unshallow origin main
+          else
+            git -C engine/Atomic-Stockfish fetch --no-tags origin main
+          fi
+          python3 tests/atomic_engine_pin.py
+          python3 tests/atomic_tsan_delegation.py
+      - name: Build memory-sanitized tools backend and pinned generator
+        run: >-
+          make -j2 ARCH=x86-64 COMP=clang debug=yes optimize=no
+          sanitize="address undefined"
+          EXTRACXXFLAGS="-O1 -fno-omit-frame-pointer"
+          data-tools data-generator
+      - name: Create deterministic synthetic Atomic network
+        run: >-
+          python3 engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
+          --output "$RUNNER_TEMP/atomic-zero.nnue"
+      - name: Run cross-component E2E under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: >-
+          python3 tests/atomic_wrapper_integration.py
+          --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
+          --tools src/atomic-data-tools
+          --net "$RUNNER_TEMP/atomic-zero.nnue"
+
+  valgrind:
+    name: Linux Valgrind wrapper E2E
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install Valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends valgrind
+      - name: Verify immutable engine pin
+        run: |
+          if [ "$(git -C engine/Atomic-Stockfish rev-parse --is-shallow-repository)" = true ]; then
+            git -C engine/Atomic-Stockfish fetch --no-tags --unshallow origin main
+          else
+            git -C engine/Atomic-Stockfish fetch --no-tags origin main
+          fi
+          python3 tests/atomic_engine_pin.py
+      - name: Build debuggable tools backend and pinned generator
+        run: >-
+          make -j2 ARCH=x86-64 COMP=gcc debug=yes optimize=no
+          EXTRACXXFLAGS="-O1 -fno-omit-frame-pointer"
+          data-tools data-generator
+      - name: Create deterministic synthetic Atomic network
+        run: >-
+          python3 engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
+          --output "$RUNNER_TEMP/atomic-zero.nnue"
+      - name: Run cross-component E2E under strict Valgrind Memcheck
+        run: >-
+          python3 tests/atomic_wrapper_integration.py
+          --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
+          --tools src/atomic-data-tools
+          --net "$RUNNER_TEMP/atomic-zero.nnue"
+          --valgrind

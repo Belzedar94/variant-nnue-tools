@@ -8,20 +8,9 @@ error()
 }
 trap 'error ${LINENO}' ERR
 
-# Each instrumentation mode runs in the same checkout, while output tools
-# intentionally refuse missing parent directories and existing paths. Give
-# every invocation fresh, relative paths that also work for native Windows
-# engines launched from MSYS expect, and remove them on success or failure.
-instrumented_output_dir=$(mktemp -d "instrumented-output.XXXXXX")
-training_data_file="$instrumented_output_dir/training_data.bin"
-training_plain_file="$instrumented_output_dir/training_data.txt"
-validation_data_file="$instrumented_output_dir/validation_data.bin"
-
 cleanup()
 {
-  rm -rf "$instrumented_output_dir"
-  rm -f game.exp syzygy.exp data_generation01.exp data_generation02.exp tsan.supp \
-    game.exp.log data_generation01.exp.log data_generation02.exp.log
+  rm -f game.exp syzygy.exp tsan.supp game.exp.log
 }
 
 trap cleanup EXIT
@@ -160,65 +149,11 @@ cat << EOF > syzygy.exp
  exit \$value
 EOF
 
-# generate_training_data testing 01
-cat << EOF > data_generation01.exp
- set timeout 240
- spawn $exeprefix ./stockfish
-
- send "uci\n"
- expect "uciok"
-
- send "setoption name Threads value $threads\n"
- send "setoption name Use NNUE value false\n"
- send "isready\n"
- send "generate_training_data depth 3 count 100 keep_draws 1 eval_limit 32000 output_file_name $training_data_file data_format bin\n"
- expect {
-   "INFO: generate_training_data finished." {}
-   timeout { puts stderr "generate_training_data timed out"; exit 1 }
-   eof { puts stderr "engine exited during generate_training_data"; exit 1 }
- }
- send "convert_plain targetfile $training_data_file output_file_name $training_plain_file\n"
- expect {
-   "all done" {}
-   timeout { puts stderr "convert_plain timed out"; exit 1 }
-   eof { puts stderr "engine exited during convert_plain"; exit 1 }
- }
-
- send "quit\n"
- expect eof
-
- # return error code of the spawned program, useful for valgrind
- lassign [wait] pid spawnid os_error_flag value
- exit \$value
-EOF
-
-# generate_training_data testing 02
-cat << EOF > data_generation02.exp
- set timeout 240
- spawn $exeprefix ./stockfish
-
- send "uci\n"
- expect "uciok"
-
- send "setoption name Threads value $threads\n"
- send "setoption name Use NNUE value true\n"
- send "isready\n"
- send "generate_training_data depth 4 count 50 keep_draws 1 eval_limit 32000 output_file_name $validation_data_file data_format bin\n"
- expect {
-   "INFO: generate_training_data finished." {}
-   timeout { puts stderr "generate_training_data timed out"; exit 1 }
-   eof { puts stderr "engine exited during generate_training_data"; exit 1 }
- }
-
- send "quit\n"
- expect eof
-
- # return error code of the spawned program, useful for valgrind
- lassign [wait] pid spawnid os_error_flag value
- exit \$value
-EOF
-
-for exp in game.exp data_generation01.exp data_generation02.exp
+# The Atomic branch no longer links PV generation into this historical
+# Fairy binary.  Its replacement is the root-level wrapper E2E, run against
+# the pinned generator and atomic-data-tools under ASan+UBSan and Valgrind by
+# .github/workflows/atomic-tools.yml.
+for exp in game.exp
 do
 
   if [ "$1" = "--valgrind" ] || [ "$1" = "--valgrind-thread" ]; then
