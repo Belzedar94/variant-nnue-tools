@@ -73,12 +73,13 @@ def expect_refusal_without_change(engine, command, output_path):
         raise AssertionError("rejected command modified existing output {}".format(output_path))
 
 
-def expect_validation_failure(engine, path, reason_fragment=None):
+def expect_validation_failure(engine, path, reason_fragment=None, extra_commands=None):
     output = run_engine(
         engine,
         "validate_training_data {}".format(path),
         expect_success=False,
         failure_text="Validation failed",
+        extra_commands=extra_commands,
     )
     if reason_fragment is not None and reason_fragment not in output:
         raise AssertionError(
@@ -114,6 +115,28 @@ def square_index(name):
     if len(name) != 2 or name[0] not in "abcdefgh" or name[1] not in "12345678":
         raise ValueError("invalid 8x8 square: {!r}".format(name))
     return ord(name[0]) - ord("a") + (int(name[1]) - 1) * 8
+
+
+def discover_ep_flag(with_ep, without_ep, expected_target):
+    if len(with_ep) != RECORD_SIZE or len(without_ep) != RECORD_SIZE:
+        raise AssertionError("EP discovery requires two single-record datasets")
+    ep_flag_bit = next(
+        (
+            bit
+            for bit in range(PACKED_SFEN_SIZE * 8)
+            if packed_bit(with_ep, bit) != packed_bit(without_ep, bit)
+        ),
+        None,
+    )
+    if ep_flag_bit is None:
+        raise AssertionError("packed EP and no-EP records were identical")
+    if not packed_bit(with_ep, ep_flag_bit) or packed_bit(without_ep, ep_flag_bit):
+        raise AssertionError("first packed difference was not the EP-present bit")
+    if read_lsb_bits(with_ep, ep_flag_bit + 1, 7) != square_index(expected_target):
+        raise AssertionError(
+            "discovered packed EP field did not encode {}".format(expected_target)
+        )
+    return ep_flag_bit
 
 
 def main():
@@ -156,11 +179,17 @@ def main():
         inconsistent_ep_binary = root / "inconsistent-ep.bin"
         packed_ep_plain = root / "packed-ep.plain"
         packed_no_ep_plain = root / "packed-no-ep.plain"
+        packed_no_ep_black_pawn_plain = root / "packed-no-ep-black-pawn.plain"
         packed_ep_binary = root / "packed-ep.bin"
         packed_no_ep_binary = root / "packed-no-ep.bin"
+        packed_no_ep_black_pawn_binary = root / "packed-no-ep-black-pawn.bin"
         inconsistent_packed_ep_binary = root / "inconsistent-packed-ep.bin"
+        no_capturer_packed_ep_binary = root / "no-capturer-packed-ep.bin"
         berolina_ep_plain = root / "berolina-ep.plain"
+        berolina_no_ep_plain = root / "berolina-no-ep.plain"
         berolina_ep_binary = root / "berolina-ep.bin"
+        berolina_no_ep_binary = root / "berolina-no-ep.bin"
+        inconsistent_berolina_ep_binary = root / "inconsistent-berolina-ep.bin"
         disabled_ep_plain = root / "disabled-ep.plain"
         disabled_ep_binary = root / "disabled-ep.bin"
         illegal_move_plain = root / "illegal-move.plain"
@@ -439,10 +468,8 @@ e
             raise AssertionError("inconsistent en-passant FEN left an output file")
 
         # Locate the packed EP-present bit by comparing otherwise identical
-        # canonical records. Then keep the rank valid while changing d6 to e6,
-        # where the board has no matching black double-pushed pawn. The move is
-        # deliberately unrelated to EP, so only the structural check can reject
-        # the corrupted record.
+        # canonical records. The move is deliberately unrelated to EP, so each
+        # corruption below reaches the intended structural rejection path.
         packed_ep_plain.write_text(
             """fen 4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1
 move e1e2
@@ -461,6 +488,13 @@ e
             encoding="utf-8",
             newline="\n",
         )
+        packed_no_ep_black_pawn_plain.write_text(
+            packed_no_ep_plain.read_text(encoding="utf-8").replace(
+                "3pP3", "3pp3"
+            ),
+            encoding="utf-8",
+            newline="\n",
+        )
         run_engine(
             engine,
             "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
@@ -473,38 +507,55 @@ e
                 packed_no_ep_plain, packed_no_ep_binary
             ),
         )
-        if packed_ep_binary.stat().st_size != RECORD_SIZE:
-            raise AssertionError("canonical packed EP fixture did not produce one record")
-        if packed_no_ep_binary.stat().st_size != RECORD_SIZE:
-            raise AssertionError("canonical no-EP fixture did not produce one record")
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                packed_no_ep_black_pawn_plain, packed_no_ep_black_pawn_binary
+            ),
+        )
         run_engine(engine, "validate_training_data {}".format(packed_ep_binary))
         run_engine(engine, "validate_training_data {}".format(packed_no_ep_binary))
-        packed_ep_data = bytearray(packed_ep_binary.read_bytes())
+        packed_ep_data = packed_ep_binary.read_bytes()
         packed_no_ep_data = packed_no_ep_binary.read_bytes()
-        ep_flag_bit = next(
-            (
-                bit
-                for bit in range(PACKED_SFEN_SIZE * 8)
-                if packed_bit(packed_ep_data, bit)
-                != packed_bit(packed_no_ep_data, bit)
-            ),
-            None,
-        )
-        if ep_flag_bit is None:
-            raise AssertionError("packed EP and no-EP records were identical")
-        if not packed_bit(packed_ep_data, ep_flag_bit):
-            raise AssertionError("first packed difference was not the EP-present bit")
-        if read_lsb_bits(packed_ep_data, ep_flag_bit + 1, 7) != square_index("d6"):
-            raise AssertionError("discovered packed EP field did not encode d6")
+        ep_flag_bit = discover_ep_flag(packed_ep_data, packed_no_ep_data, "d6")
 
+        inconsistent_ep_data = bytearray(packed_ep_data)
         write_lsb_bits(
-            packed_ep_data, ep_flag_bit + 1, 7, square_index("e6")
+            inconsistent_ep_data, ep_flag_bit + 1, 7, square_index("f6")
         )
-        inconsistent_packed_ep_binary.write_bytes(packed_ep_data)
+        inconsistent_packed_ep_binary.write_bytes(inconsistent_ep_data)
         expect_validation_failure(
             engine,
             inconsistent_packed_ep_binary,
             "no possible initial-move provenance",
+        )
+
+        packed_no_ep_black_pawn_data = packed_no_ep_black_pawn_binary.read_bytes()
+        pawn_color_bits = [
+            bit
+            for bit in range(ep_flag_bit)
+            if packed_bit(packed_no_ep_data, bit)
+            != packed_bit(packed_no_ep_black_pawn_data, bit)
+        ]
+        if len(pawn_color_bits) != 1:
+            raise AssertionError(
+                "changing the e5 pawn color changed {} packed bits".format(
+                    len(pawn_color_bits)
+                )
+            )
+        no_capturer_data = bytearray(packed_ep_data)
+        pawn_color_bit = pawn_color_bits[0]
+        write_lsb_bits(
+            no_capturer_data,
+            pawn_color_bit,
+            1,
+            packed_bit(packed_no_ep_black_pawn_data, pawn_color_bit),
+        )
+        no_capturer_packed_ep_binary.write_bytes(no_capturer_data)
+        expect_validation_failure(
+            engine,
+            no_capturer_packed_ep_binary,
+            "no eligible capturer",
         )
 
         # Berolina creates EP targets from a diagonal initial move by a custom
@@ -521,6 +572,13 @@ e
             encoding="utf-8",
             newline="\n",
         )
+        berolina_no_ep_plain.write_text(
+            berolina_ep_plain.read_text(encoding="utf-8").replace(
+                " b - d3 ", " b - - "
+            ),
+            encoding="utf-8",
+            newline="\n",
+        )
         berolina_option = ["setoption name UCI_Variant value berolina"]
         run_engine(
             engine,
@@ -529,11 +587,39 @@ e
             ),
             extra_commands=berolina_option,
         )
-        if berolina_ep_binary.stat().st_size != RECORD_SIZE:
-            raise AssertionError("canonical Berolina EP fixture did not produce one record")
+        run_engine(
+            engine,
+            "convert_bin targetfile {} output_file_name {} check_illegal_move 1".format(
+                berolina_no_ep_plain, berolina_no_ep_binary
+            ),
+            extra_commands=berolina_option,
+        )
         run_engine(
             engine,
             "validate_training_data {}".format(berolina_ep_binary),
+            extra_commands=berolina_option,
+        )
+        run_engine(
+            engine,
+            "validate_training_data {}".format(berolina_no_ep_binary),
+            extra_commands=berolina_option,
+        )
+        berolina_ep_data = berolina_ep_binary.read_bytes()
+        berolina_ep_flag = discover_ep_flag(
+            berolina_ep_data, berolina_no_ep_binary.read_bytes(), "d3"
+        )
+        inconsistent_berolina_data = bytearray(berolina_ep_data)
+        write_lsb_bits(
+            inconsistent_berolina_data,
+            berolina_ep_flag + 1,
+            7,
+            square_index("f3"),
+        )
+        inconsistent_berolina_ep_binary.write_bytes(inconsistent_berolina_data)
+        expect_validation_failure(
+            engine,
+            inconsistent_berolina_ep_binary,
+            "no possible initial-move provenance",
             extra_commands=berolina_option,
         )
 

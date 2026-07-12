@@ -235,6 +235,25 @@ bool packed_shape_is_safe(const PackedSfen& packed,
         // etc.) create it on squares between an initial-only origin/destination.
         const Color moved_side = ~side_to_move;
         const Direction push = pawn_push(moved_side);
+        if (variant.fastAttacks)
+        {
+            Bitboard pawn_capturers = 0;
+            for (Square square = SQ_A1; square <= SQ_H8; ++square)
+                if (board[square].type == PAWN
+                    && board[square].color == side_to_move)
+                    pawn_capturers |= square;
+            if (!(pawn_attacks_bb(moved_side, target) & pawn_capturers)
+                && !(variant.enPassantTypes[side_to_move] & ~piece_set(PAWN)))
+            {
+                reason = "en-passant square has no eligible capturer";
+                return false;
+            }
+        }
+
+        const auto origin_is_available = [&](Square origin) {
+            return board[origin].type == NO_PIECE_TYPE
+                || (variant.gating && board[origin].color == moved_side);
+        };
         bool has_provenance = false;
 
         // Keep the common standard-pawn path linear in board size. Dataset
@@ -242,7 +261,7 @@ bool packed_shape_is_safe(const PackedSfen& packed,
         // more general Betza search when no pawn push explains the target.
         for (Square origin = SQ_A1; origin <= SQ_H8 && !has_provenance; ++origin)
         {
-            if (board[origin].type != NO_PIECE_TYPE)
+            if (!origin_is_available(origin))
                 continue;
 
             const int one_index = int(origin) + int(push);
@@ -289,7 +308,7 @@ bool packed_shape_is_safe(const PackedSfen& packed,
 
             for (Square origin = SQ_A1; origin <= SQ_H8 && !has_provenance; ++origin)
             {
-                if (board[origin].type != NO_PIECE_TYPE)
+                if (!origin_is_available(origin))
                     continue;
                 if (!(variant.doubleStepRegion[moved_side] & origin))
                     continue;
@@ -305,14 +324,19 @@ bool packed_shape_is_safe(const PackedSfen& packed,
                     while (destinations && !has_provenance)
                     {
                         const Square destination = pop_lsb(destinations);
-                        const Bitboard previous_occupied =
+                        const Bitboard previous_quiet_occupied =
                           (occupied - destination) | origin;
-                        const Bitboard initial_only =
+                        const Bitboard previous_capture_occupied = occupied | origin;
+                        const Bitboard initial_geometry =
                           PseudoMoves[1][moved_side][move_type][origin]
-                          & ~PseudoMoves[0][moved_side][move_type][origin]
-                          & moves_bb<true>(moved_side, move_type, origin,
-                                           previous_occupied);
-                        has_provenance = (initial_only & destination)
+                          & ~PseudoMoves[0][moved_side][move_type][origin];
+                        const Bitboard possible_destinations =
+                          moves_bb<true>(moved_side, move_type, origin,
+                                         previous_quiet_occupied)
+                          | attacks_bb(moved_side, move_type, origin,
+                                       previous_capture_occupied);
+                        has_provenance = (initial_geometry & possible_destinations
+                                          & destination)
                                       && (between_bb(origin, destination) & target);
                     }
                 }
