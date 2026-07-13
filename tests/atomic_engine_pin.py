@@ -18,6 +18,21 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOCK = REPO_ROOT / "atomic-engine.lock.json"
 HEX_SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 HEX_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+V2_DATA_SCHEMA_PATH = "schemas/atomic-bin-v2.json"
+V2_DATA_SCHEMA_SHA256 = (
+    "0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6"
+)
+V2_MANIFEST_SCHEMA_PATH = "schemas/atomic-bin-v2-manifest.json"
+V2_MANIFEST_SCHEMA_SHA256 = (
+    "83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42"
+)
+DATA_TOOLS_CAPABILITIES = (
+    '{"type":"atomic-data-tools-capabilities","contract_version":1,'
+    '"formats":{"atomic-bin-v2":{"data_schema_sha256":'
+    f'"{V2_DATA_SCHEMA_SHA256}","manifest_schema_sha256":'
+    f'"{V2_MANIFEST_SCHEMA_SHA256}","entrypoint":"manifest","read":true,'
+    '"write":false,"operations":["validate"]}}}\n'
+)
 
 
 def find_git() -> str:
@@ -77,9 +92,30 @@ def sha256(path: Path) -> str:
 
 def safe_relative_path(raw: object, label: str) -> PurePosixPath:
     require(isinstance(raw, str) and raw != "", f"{label} must be a non-empty string")
+    require(
+        "\\" not in raw and ":" not in raw and "\x00" not in raw,
+        f"{label} must use a canonical repository-relative POSIX path",
+    )
     path = PurePosixPath(raw)
-    require(not path.is_absolute() and ".." not in path.parts, f"{label} must be repository-relative")
+    require(
+        path.parts
+        and raw == path.as_posix()
+        and not path.is_absolute()
+        and all(part not in {".", ".."} for part in path.parts),
+        f"{label} must use a canonical repository-relative POSIX path",
+    )
     return path
+
+
+def resolved_repository_path(root: Path, raw: object, label: str) -> Path:
+    relative = safe_relative_path(raw, label)
+    resolved_root = root.resolve()
+    resolved = resolved_root.joinpath(*relative.parts).resolve()
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError as error:
+        raise PinError(f"{label} resolves outside its repository root") from error
+    return resolved
 
 
 def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
@@ -91,10 +127,17 @@ def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
         raise PinError(f"cannot read engine lock {path}: {error}") from error
     require(isinstance(payload, dict), "engine lock root must be an object")
     require(
-        set(payload) == {"schema_version", "submodule", "data_schema", "build_contract"},
+        set(payload)
+        == {
+            "schema_version",
+            "submodule",
+            "data_schema",
+            "build_contract",
+            "data_tools_contract",
+        },
         "engine lock has missing or unknown top-level fields",
     )
-    require(payload["schema_version"] == 1, "unsupported engine lock schema_version")
+    require(payload["schema_version"] == 2, "unsupported engine lock schema_version")
 
     submodule = payload["submodule"]
     require(isinstance(submodule, dict), "submodule lock must be an object")
@@ -143,8 +186,10 @@ def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
         == {
             "playing_target",
             "data_generator_target",
+            "data_tools_target",
             "playing_artifacts",
             "data_generator_artifacts",
+            "data_tools_artifacts",
         },
         "build_contract lock has missing or unknown fields",
     )
@@ -153,6 +198,7 @@ def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
         build["data_generator_target"] == "data-generator",
         "unexpected data-generator target",
     )
+    require(build["data_tools_target"] == "data-tools", "unexpected data-tools target")
     expected_artifacts = {
         "playing_artifacts": {
             "linux": "src/atomic-stockfish",
@@ -162,9 +208,75 @@ def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
             "linux": "src/atomic-stockfish-data-generator",
             "windows": "src/atomic-stockfish-data-generator.exe",
         },
+        "data_tools_artifacts": {
+            "linux": "src/atomic-stockfish-data-tools",
+            "windows": "src/atomic-stockfish-data-tools.exe",
+        },
     }
     for field, expected in expected_artifacts.items():
         require(build[field] == expected, f"unexpected {field} contract")
+
+    tools = payload["data_tools_contract"]
+    require(isinstance(tools, dict), "data_tools_contract lock must be an object")
+    require(
+        set(tools)
+        == {"contract_version", "data_schema", "manifest_schema", "capabilities"},
+        "data_tools_contract lock has missing or unknown fields",
+    )
+    require(
+        type(tools["contract_version"]) is int and tools["contract_version"] == 1,
+        "unsupported data-tools contract_version",
+    )
+
+    expected_schemas = {
+        "data_schema": (V2_DATA_SCHEMA_PATH, V2_DATA_SCHEMA_SHA256),
+        "manifest_schema": (V2_MANIFEST_SCHEMA_PATH, V2_MANIFEST_SCHEMA_SHA256),
+    }
+    for field, (expected_path, expected_sha256) in expected_schemas.items():
+        locked_schema = tools[field]
+        require(isinstance(locked_schema, dict), f"{field} lock must be an object")
+        require(
+            set(locked_schema) == {"path", "sha256"},
+            f"{field} lock has missing or unknown fields",
+        )
+        safe_relative_path(locked_schema["path"], f"data_tools_contract.{field}.path")
+        require(
+            locked_schema["path"] == expected_path,
+            f"unexpected data-tools {field} path",
+        )
+        require(
+            isinstance(locked_schema["sha256"], str)
+            and HEX_SHA256_RE.fullmatch(locked_schema["sha256"]) is not None,
+            f"data-tools {field} hash must be a lowercase 64-digit SHA-256",
+        )
+        require(
+            locked_schema["sha256"] == expected_sha256,
+            f"unexpected data-tools {field} SHA-256",
+        )
+
+    capabilities = tools["capabilities"]
+    require(isinstance(capabilities, str), "data-tools capabilities must be a string")
+    require(
+        capabilities.endswith("\n")
+        and "\r" not in capabilities
+        and "\n" not in capabilities[:-1],
+        "data-tools capabilities must be exactly one LF-terminated JSON line",
+    )
+    try:
+        decoded_capabilities = json.loads(capabilities)
+    except json.JSONDecodeError as error:
+        raise PinError(f"data-tools capabilities is not valid JSON: {error}") from error
+    canonical_capabilities = (
+        json.dumps(decoded_capabilities, ensure_ascii=False, separators=(",", ":")) + "\n"
+    )
+    require(
+        capabilities == canonical_capabilities,
+        "data-tools capabilities must use canonical minified JSON",
+    )
+    require(
+        capabilities == DATA_TOOLS_CAPABILITIES,
+        "unexpected data-tools capabilities contract",
+    )
     return payload
 
 
@@ -183,7 +295,7 @@ def index_file(root: Path, relative_path: str, expected_mode: str) -> str:
         f"{relative_path} has an invalid or conflicted index entry",
     )
     indexed = run_git(root, "show", f":{relative_path}")
-    worktree_path = root.joinpath(*PurePosixPath(relative_path).parts)
+    worktree_path = resolved_repository_path(root, relative_path, relative_path)
     try:
         worktree = worktree_path.read_text(encoding="utf-8").rstrip("\r\n")
     except OSError as error:
@@ -260,7 +372,9 @@ def verify_engine_pin(root: Path = REPO_ROOT, lock_path: Path | None = None) -> 
     require(lock_relative == DEFAULT_LOCK.name, "engine lock must use the canonical path")
     lock = load_lock(lock_path, index_file(root, lock_relative, "100644"))
     submodule_lock = lock["submodule"]
-    submodule_path = root.joinpath(*PurePosixPath(submodule_lock["path"]).parts)
+    submodule_path = resolved_repository_path(
+        root, submodule_lock["path"], "submodule.path"
+    )
 
     require((root / ".gitmodules").is_file(), ".gitmodules is missing")
     index_file(root, ".gitmodules", "100644")
@@ -324,7 +438,9 @@ def verify_engine_pin(root: Path = REPO_ROOT, lock_path: Path | None = None) -> 
     )
 
     schema_lock = lock["data_schema"]
-    schema_path = submodule_path.joinpath(*PurePosixPath(schema_lock["path"]).parts)
+    schema_path = resolved_repository_path(
+        submodule_path, schema_lock["path"], "data_schema.path"
+    )
     require(schema_path.is_file(), f"pinned data schema is missing: {schema_path}")
     actual_schema_sha = sha256(schema_path)
     require(actual_schema_sha == schema_lock["sha256"], "pinned data schema SHA-256 mismatch")
@@ -337,12 +453,63 @@ def verify_engine_pin(root: Path = REPO_ROOT, lock_path: Path | None = None) -> 
     require(schema.get("format", {}).get("record_size") == schema_lock["record_size"], "pinned schema record size mismatch")
     require(schema.get("format", {}).get("atomic960") is schema_lock["atomic960"], "pinned schema Atomic960 capability mismatch")
 
+    tools_lock = lock["data_tools_contract"]
+    authenticated_schemas: dict[str, dict[str, Any]] = {}
+    for field in ("data_schema", "manifest_schema"):
+        schema_contract = tools_lock[field]
+        authenticated_path = resolved_repository_path(
+            submodule_path,
+            schema_contract["path"],
+            f"data_tools_contract.{field}.path",
+        )
+        require(
+            authenticated_path.is_file(),
+            f"pinned data-tools {field} is missing: {authenticated_path}",
+        )
+        require(
+            sha256(authenticated_path) == schema_contract["sha256"],
+            f"pinned data-tools {field} SHA-256 mismatch",
+        )
+        try:
+            decoded_schema = json.loads(authenticated_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise PinError(f"cannot parse pinned data-tools {field}: {error}") from error
+        require(
+            isinstance(decoded_schema, dict),
+            f"pinned data-tools {field} root must be an object",
+        )
+        authenticated_schemas[field] = decoded_schema
+
+    v2_schema = authenticated_schemas["data_schema"]
+    require(v2_schema.get("schema_version") == 2, "pinned V2 data schema version mismatch")
+    require(v2_schema.get("schema_id") == "atomic-bin-v2", "pinned V2 data schema id mismatch")
+    require(v2_schema.get("variant") == "atomic", "pinned V2 data schema variant mismatch")
+
+    manifest_schema = authenticated_schemas["manifest_schema"]
+    require(
+        manifest_schema.get("schema_version") == 1,
+        "pinned V2 manifest schema version mismatch",
+    )
+    require(
+        manifest_schema.get("$id")
+        == "urn:atomic-stockfish:schema:atomic-bin-v2-manifest:1",
+        "pinned V2 manifest schema id mismatch",
+    )
+    require(
+        manifest_schema.get("properties", {})
+        .get("data_schema_sha256", {})
+        .get("const")
+        == V2_DATA_SCHEMA_SHA256,
+        "pinned V2 manifest data-schema binding mismatch",
+    )
+
     engine_makefile = submodule_path / "src" / "Makefile"
     require(engine_makefile.is_file(), "pinned engine Makefile is missing")
     makefile = engine_makefile.read_text(encoding="utf-8")
     for target in (
         lock["build_contract"]["playing_target"],
         lock["build_contract"]["data_generator_target"],
+        lock["build_contract"]["data_tools_target"],
     ):
         require(
             re.search(rf"^{re.escape(target)}\s*:", makefile, re.MULTILINE) is not None,
@@ -369,7 +536,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         "Atomic engine pin verified "
         f"commit={lock['submodule']['commit']} "
-        f"schema_sha256={lock['data_schema']['sha256']}"
+        f"legacy_schema_sha256={lock['data_schema']['sha256']} "
+        f"data_tools_contract={lock['data_tools_contract']['contract_version']} "
+        f"v2_schema_sha256={lock['data_tools_contract']['data_schema']['sha256']}"
     )
     return 0
 

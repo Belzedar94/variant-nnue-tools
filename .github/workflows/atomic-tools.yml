@@ -46,7 +46,7 @@ jobs:
           fi
           python3 tests/atomic_engine_pin.py
           python3 tests/test_atomic_engine_pin.py
-      - name: Build and test Legacy V1 tools backend
+      - name: Build and test Legacy V1 and Atomic BIN V2 tools
         run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} test
       - name: Build pinned playing engine
         run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} playing-engine
@@ -58,11 +58,13 @@ jobs:
         run: >-
           python3 engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
           --output "$RUNNER_TEMP/atomic-zero.nnue"
-      - name: Cross-component wrapper fixture
+      - name: Cross-component Legacy and V2 wrapper fixtures
         run: >-
           python3 tests/atomic_wrapper_integration.py
           --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
           --tools src/atomic-data-tools
+          --v2-wrapper script/atomic_bin_v2_tools.py
+          --v2-tools engine/Atomic-Stockfish/src/atomic-stockfish-data-tools
           --net "$RUNNER_TEMP/atomic-zero.nnue"
       - name: Full Atomic generator fixtures through tools validator
         run: >-
@@ -102,7 +104,7 @@ jobs:
           fi
           python tests/atomic_engine_pin.py
           python tests/test_atomic_engine_pin.py
-      - name: Build and test Legacy V1 tools backend
+      - name: Build and test Legacy V1 and Atomic BIN V2 tools
         run: make -j2 ARCH=x86-64 COMP=mingw test
       - name: Build pinned playing engine
         run: make -j2 ARCH=x86-64 COMP=mingw playing-engine
@@ -114,11 +116,13 @@ jobs:
         run: >-
           python engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
           --output "$RUNNER_TEMP/atomic-zero.nnue"
-      - name: Cross-component wrapper fixture
+      - name: Cross-component Legacy and V2 wrapper fixtures
         run: >-
           python tests/atomic_wrapper_integration.py
           --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator.exe
           --tools src/atomic-data-tools.exe
+          --v2-wrapper script/atomic_bin_v2_tools.py
+          --v2-tools engine/Atomic-Stockfish/src/atomic-stockfish-data-tools.exe
           --net "$RUNNER_TEMP/atomic-zero.nnue"
       - name: Full Atomic generator fixtures through tools validator
         run: >-
@@ -153,17 +157,20 @@ jobs:
           fi
           python3 tests/atomic_engine_pin.py
           python3 tests/atomic_tsan_delegation.py
-      - name: Build memory-sanitized tools backend and pinned generator
-        run: >-
-          make -j2 ARCH=x86-64 COMP=clang debug=yes optimize=no
-          sanitize="address undefined"
-          EXTRACXXFLAGS="-O1 -fno-omit-frame-pointer"
-          data-tools data-generator
+      - name: Build memory-sanitized tools backends and pinned generator
+        run: |
+          common=(ARCH=x86-64 COMP=clang debug=yes optimize=no
+            'sanitize=address undefined'
+            'EXTRACXXFLAGS=-O1 -fno-omit-frame-pointer')
+          make -j2 "${common[@]}" legacy-data-tools
+          make -j2 "${common[@]}" v2-data-tools-tests
+          make -j2 "${common[@]}" v2-tools-unit
+          make -j2 "${common[@]}" data-generator
       - name: Create deterministic synthetic Atomic network
         run: >-
           python3 engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
           --output "$RUNNER_TEMP/atomic-zero.nnue"
-      - name: Run cross-component E2E under ASan and UBSan
+      - name: Run Legacy and V2 wrapper E2E under ASan and UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -171,6 +178,8 @@ jobs:
           python3 tests/atomic_wrapper_integration.py
           --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
           --tools src/atomic-data-tools
+          --v2-wrapper script/atomic_bin_v2_tools.py
+          --v2-tools engine/Atomic-Stockfish/src/atomic-stockfish-data-tools
           --net "$RUNNER_TEMP/atomic-zero.nnue"
 
   valgrind:
@@ -197,19 +206,24 @@ jobs:
             git -C engine/Atomic-Stockfish fetch --no-tags origin main
           fi
           python3 tests/atomic_engine_pin.py
-      - name: Build debuggable tools backend and pinned generator
-        run: >-
-          make -j2 ARCH=x86-64 COMP=gcc debug=yes optimize=no
-          EXTRACXXFLAGS="-O1 -fno-omit-frame-pointer"
-          data-tools data-generator
+      - name: Build debuggable tools backends and pinned generator
+        run: |
+          common=(ARCH=x86-64 COMP=gcc debug=yes optimize=no
+            'EXTRACXXFLAGS=-O1 -fno-omit-frame-pointer')
+          make -j2 "${common[@]}" legacy-data-tools
+          make -j2 "${common[@]}" v2-data-tools
+          make -j2 "${common[@]}" v2-tools-unit
+          make -j2 "${common[@]}" data-generator
       - name: Create deterministic synthetic Atomic network
         run: >-
           python3 engine/Atomic-Stockfish/tests/create_synthetic_zero_nnue.py
           --output "$RUNNER_TEMP/atomic-zero.nnue"
-      - name: Run cross-component E2E under strict Valgrind Memcheck
+      - name: Run Legacy and V2 E2E under strict Valgrind Memcheck
         run: >-
           python3 tests/atomic_wrapper_integration.py
           --generator engine/Atomic-Stockfish/src/atomic-stockfish-data-generator
           --tools src/atomic-data-tools
+          --v2-wrapper script/atomic_bin_v2_tools.py
+          --v2-tools engine/Atomic-Stockfish/src/atomic-stockfish-data-tools
           --net "$RUNNER_TEMP/atomic-zero.nnue"
           --valgrind

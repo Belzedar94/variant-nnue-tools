@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from typing import Sequence
 
@@ -76,6 +78,15 @@ def generator_command(output: Path) -> str:
     )
 
 
+def v2_generator_command(output: Path) -> str:
+    return (
+        "generate_training_data depth 1 count 2 write_min_ply 0 write_max_ply 2 "
+        "random_move_count 0 keep_draws 1 eval_limit 32000 "
+        "filter_captures false filter_checks false filter_promotions false "
+        f"output_file_name {output} data_format atomic-bin-v2 seed tools-wire-test"
+    )
+
+
 def generate(
     generator: Path,
     net: Path,
@@ -102,10 +113,153 @@ def generate(
     )
 
 
+def generate_v2(
+    generator: Path,
+    net: Path,
+    output: Path,
+    *,
+    prefix: Sequence[str] = (),
+    timeout: float = 120.0,
+) -> str:
+    return run_binary(
+        generator,
+        (
+            "uci",
+            f"setoption name EvalFile value {net}",
+            "setoption name Use NNUE value pure",
+            "setoption name Threads value 1",
+            "setoption name Hash value 16",
+            "isready",
+            v2_generator_command(output),
+            "quit",
+        ),
+        prefix=prefix,
+        timeout=timeout,
+    )
+
+
+def run_process(
+    command: Sequence[str], timeout: float
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        list(command),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def assert_v2_delegation(
+    wrapper: Path,
+    tools: Path,
+    generator: Path,
+    net: Path,
+    root: Path,
+    *,
+    generator_prefix: Sequence[str],
+    timeout: float,
+) -> None:
+    shard = root / "delegated-v2.atbin"
+    output = generate_v2(
+        generator,
+        net,
+        shard,
+        prefix=generator_prefix,
+        timeout=timeout,
+    )
+    if output.splitlines().count("INFO: generate_training_data finished.") != 1:
+        raise AssertionError(f"Atomic BIN V2 generator did not finish once:\n{output}")
+    manifest = Path(str(shard) + ".manifest.json")
+    if not shard.is_file() or not manifest.is_file():
+        raise AssertionError(
+            "Atomic BIN V2 generator did not create both shard and canonical sidecar"
+        )
+
+    wrapper_command = (sys.executable, str(wrapper))
+    cases = (
+        ("capabilities",),
+        (
+            "validate",
+            "--manifest",
+            str(manifest),
+            "--format",
+            "atomic-bin-v2",
+        ),
+        (
+            "validate",
+            "--format",
+            "atomic-bin-v2",
+            "--manifest",
+            str(shard),
+        ),
+    )
+    results: list[subprocess.CompletedProcess[bytes]] = []
+    for arguments in cases:
+        direct = run_process((str(tools), *arguments), timeout)
+        delegated = run_process((*wrapper_command, *arguments), timeout)
+        if (
+            delegated.returncode != direct.returncode
+            or delegated.stdout != direct.stdout
+            or delegated.stderr != direct.stderr
+        ):
+            raise AssertionError(
+                "V2 wrapper did not preserve the child result byte-exactly "
+                f"for {arguments!r}: direct={direct!r} delegated={delegated!r}"
+            )
+        results.append(delegated)
+
+    capabilities, valid, raw_shard = results
+    if capabilities.returncode != 0 or not capabilities.stdout.endswith(b"\n"):
+        raise AssertionError("V2 capabilities were not a successful LF-terminated response")
+    capability_payload = json.loads(capabilities.stdout)
+    if set(capability_payload.get("formats", {})) != {"atomic-bin-v2"}:
+        raise AssertionError(f"unexpected V2 capabilities: {capability_payload!r}")
+
+    if valid.returncode != 0 or valid.stderr:
+        raise AssertionError(f"delegated V2 validation failed: {valid!r}")
+    validation_payload = json.loads(valid.stdout)
+    if (
+        validation_payload.get("status") != "ok"
+        or validation_payload.get("format") != "atomic-bin-v2"
+        or validation_payload.get("entrypoint") != "manifest"
+        or validation_payload.get("records") != "2"
+    ):
+        raise AssertionError(f"unexpected V2 validation response: {validation_payload!r}")
+
+    if raw_shard.returncode != 3 or raw_shard.stdout or not raw_shard.stderr:
+        raise AssertionError(
+            "raw V2 shard was not rejected by the authoritative child with exit 3"
+        )
+    raw_payload = json.loads(raw_shard.stderr)
+    if raw_payload.get("code") != "invalid_manifest":
+        raise AssertionError(f"unexpected raw-shard rejection: {raw_payload!r}")
+
+    if generator_prefix:
+        for arguments in cases[:2]:
+            instrumented = run_process(
+                (*generator_prefix, str(tools), *arguments), timeout
+            )
+            if instrumented.returncode != 0:
+                raise AssertionError(
+                    "instrumented V2 child failed "
+                    f"for {arguments!r}: {instrumented!r}"
+                )
+            try:
+                json.loads(instrumented.stdout)
+            except json.JSONDecodeError as error:
+                raise AssertionError(
+                    "instrumented V2 child emitted invalid JSON "
+                    f"for {arguments!r}: {instrumented.stdout!r}"
+                ) from error
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--generator", type=Path, required=True)
     parser.add_argument("--tools", type=Path, required=True)
+    parser.add_argument("--v2-wrapper", type=Path)
+    parser.add_argument("--v2-tools", type=Path)
     parser.add_argument("--net", type=Path, required=True)
     parser.add_argument("--expected-data-sha256")
     parser.add_argument(
@@ -120,6 +274,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     generator = require_file(args.generator, "Atomic data generator")
     tools = require_file(args.tools, "Atomic data tools")
+    if (args.v2_wrapper is None) != (args.v2_tools is None):
+        raise AssertionError("--v2-wrapper and --v2-tools must be supplied together")
+    v2_wrapper = (
+        require_file(args.v2_wrapper, "Atomic BIN V2 wrapper")
+        if args.v2_wrapper is not None
+        else None
+    )
+    v2_tools = (
+        require_file(args.v2_tools, "Atomic BIN V2 data tools")
+        if args.v2_tools is not None
+        else None
+    )
     net = require_file(args.net, "Atomic NNUE")
     net_sha = hashlib.sha256(net.read_bytes()).hexdigest().upper()
     expected_data_sha = (
@@ -209,6 +375,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise AssertionError(f"tools still exposes the removed PV generator:\n{tools_output}")
         if "INFO: generate_training_data finished." in tools_output or removed.exists():
             raise AssertionError("tools backend executed the removed PV generator")
+
+        if v2_wrapper is not None and v2_tools is not None:
+            assert_v2_delegation(
+                v2_wrapper,
+                v2_tools,
+                generator,
+                net,
+                root,
+                generator_prefix=prefix,
+                timeout=timeout,
+            )
 
     print(
         "Atomic wrapper integration passed "

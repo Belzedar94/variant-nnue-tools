@@ -1,22 +1,25 @@
 # Legacy Atomic v1 pipeline
 
 This compatibility line keeps the current Atomic HalfKAv2 pipeline
-reproducible while the versioned successor format is designed. Generation is
+reproducible alongside the versioned successor format. Generation is
 owned by the exact Atomic-Stockfish gitlink in `atomic-engine.lock.json`;
-validation/conversion are temporarily owned by this repository; decoding and
-training are owned by `variant-nnue-pytorch/atomic`. Every dataset manifest
-must record the exact commits and network hash. Branch names are never source
-pins.
+validation/conversion remain owned by this repository; decoding and training
+are owned by `variant-nnue-pytorch/atomic`. Atomic BIN V2 is additive and does
+not change this historical wire. Every dataset provenance record must include
+the exact commits and network hash. Branch names are never source pins.
 
 ## Engine setup
 
-Build the pinned generator and the temporary tools backend from the repository
+Build the pinned generator and the Legacy tools backend from the repository
 root:
 
 ```bash
 make -j2 ARCH=x86-64 data-generator
-make -j2 ARCH=x86-64 data-tools
+make -j2 ARCH=x86-64 legacy-data-tools
 ```
+
+`data-tools` remains a compatibility alias for `legacy-data-tools`; neither
+target builds or selects the Atomic BIN V2 validator.
 
 Set the generator options before requesting data:
 
@@ -32,9 +35,9 @@ generate_training_data ... seed <fixed-seed> data_format bin
 
 `Use NNUE=pure` is a data-generation mode. Playing-strength tests use
 `Use NNUE=true`; `pure` is not a fourth playing configuration. The exact
-loaded network must also be recorded by SHA-256 in the dataset manifest. The
-temporary `atomic-data-tools` backend deliberately rejects PV generation; it
-remains responsible for read-side validation, conversion and statistics.
+loaded network must also be recorded by SHA-256 in the dataset provenance. The
+`atomic-data-tools` backend deliberately rejects PV generation; it remains
+responsible for Legacy V1 read-side validation, conversion and statistics.
 
 A textual or numeric `seed` is resolved once to a non-zero 64-bit number and
 printed as `PRNG::initial_seed`. Reuse that printed decimal value to replay the
@@ -64,7 +67,8 @@ promotions, large-board squares, null moves, and other modern move types fail
 explicitly instead of being truncated.
 
 The format has no magic, version, byte order marker, schema hash, or record
-count. Therefore it must not be confused with the future `atomic-bin-v2`.
+count. Therefore it must not be confused with `atomic-bin-v2` and cannot be
+auto-detected safely.
 
 ## Schema handshake
 
@@ -95,7 +99,7 @@ Legacy Atomic V1 read/write support.
 The packed position also predates Chess960 rook-origin metadata. The wrapper
 exposes only Atomic and Legacy V1 commands reject `UCI_Chess960=true` instead
 of silently emitting ambiguous castling state. Atomic960 dataset support
-therefore belongs in the versioned successor format; this does not limit
+therefore belongs in Atomic BIN V2; this does not limit
 Atomic960 support in the playing engine.
 
 ## File and validation policy
@@ -119,7 +123,8 @@ framing and the FEN/move/numeric fields. Validation errors terminate with a
 non-zero exit status so CI and dataset jobs cannot silently continue.
 
 The legacy format is retained for compatibility, not extended. New fields or
-move types require a new versioned format.
+move types use Atomic BIN V2. A caller must select the contract explicitly;
+the V2 launcher never guesses from a V1 or V2 filename or contents.
 
 The local tools gate verifies the Atomic-only read/write backend. The dedicated
 Atomic workflow additionally verifies `pure` generation in the pinned
@@ -130,6 +135,10 @@ codec unit, and instruments the cross-component path:
 make -j2 ARCH=x86-64 test
 python tests/tools_integration.py --engine src/atomic-data-tools
 ```
+
+The V2 validator and launcher have independent targets documented in
+[Atomic BIN V2](atomic_bin_v2.md). Passing a raw `.atbin` shard is never a
+valid substitute for its canonical manifest sidecar.
 
 The historical `tests/instrumented.sh` no longer calls the deleted Fairy PV
 generator. Its generator cases are replaced by wrapper-level ASan+UBSan and

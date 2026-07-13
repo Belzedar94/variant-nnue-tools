@@ -2,34 +2,49 @@
 
 This `atomic` branch is the dataset-tooling layer for
 [Atomic-Stockfish](https://github.com/Belzedar94/Atomic-Stockfish). It is not a
-second playing engine and it is not the upstream multi-variant tools release.
+second playing engine and it is independent of the upstream multi-variant tools
+release.
 
-The authoritative PV self-play generator is compiled from the pinned
-`engine/Atomic-Stockfish` submodule. This repository temporarily retains the
-historical Fairy-based reader/converter backend as `atomic-data-tools` while
-the Legacy Atomic V1 decoder and the future `atomic-bin-v2` implementation are
-moved behind the shared Atomic core.
+Two explicit data contracts coexist during the migration:
+
+- `legacy-atomic-v1` uses the retained Fairy-derived `atomic-data-tools`
+  executable for the historical headerless 72-byte format;
+- `atomic-bin-v2` uses `script/atomic_bin_v2_tools.py`, a fail-closed launcher
+  for the validator compiled from the pinned Atomic-Stockfish submodule.
+
+The wrapper never guesses a format from a filename or file contents. V2 can be
+opened only through its canonical `.atbin.manifest.json` sidecar. Legacy V1
+remains available under explicit legacy targets and commands.
 
 ## Repository contract
 
 | Role | Owner | Capability |
 | --- | --- | --- |
 | Playing engine | `engine/Atomic-Stockfish` | UCI/XBoard Atomic engine |
-| PV data generation | `engine/Atomic-Stockfish` | Legacy Atomic V1 writer |
-| Dataset tools | this repository | Legacy Atomic V1 read/write conversion, validation and statistics |
-| Trainer | `variant-nnue-pytorch/atomic` | Legacy Atomic V1 reader and NNUE serialization |
+| Data generation | `engine/Atomic-Stockfish` | Legacy V1 and Atomic BIN V2 writers |
+| Legacy dataset tools | this repository | V1 validation, conversion and statistics |
+| V2 dataset validator | `engine/Atomic-Stockfish` | Manifest-authenticated, streaming V2 validation |
+| V2 command launcher | this repository | Authenticated delegation to the pinned validator |
+| Trainer | `variant-nnue-pytorch/atomic` | Version-specific dataset readers and NNUE serialization |
 
-`atomic-engine.lock.json` is authoritative for the engine commit, canonical
-repository URL, build targets and shared schema SHA-256. The locked commit must
-be merged into `Atomic-Stockfish/main`; branch heads are not accepted as pins.
-`tests/atomic_engine_pin.py` authenticates one coherent Git index snapshot and
-rejects a missing, dirty, conflicted or wrong-commit submodule, uncommitted lock
-metadata, a changed URL/gitlink and schema drift. The compiled tools handshake
-is generated from the pinned `atomic-schema.json`, then checked for staleness.
+`atomic-engine.lock.json` is authoritative for the engine commit, repository
+URL, schemas, artifacts and data-tools capability response. The locked commit
+must be merged into `Atomic-Stockfish/main`; branch heads are not accepted as
+pins. `make verify-engine-pin` authenticates one coherent Git index snapshot
+and rejects a missing, dirty, conflicted or wrong-commit submodule, changed
+URL/gitlink, stale lock data, schema drift and a mismatched V2 capability.
+
+The V2 launcher reruns the same index/gitlink/source verifier, then executes
+`capabilities` before delegating and requires the child's canonical UTF-8
+response to match the lock byte for byte, including its single LF. A mismatched
+source checkout or incompatible child contract fails before a dataset is
+opened. Contract version 1 is the compatibility identity of the generated
+artifact; the launcher does not claim a cryptographic signature over a local
+compiler output.
 
 ## Checkout and build
 
-Clone with the submodule:
+Clone the branch with its pinned submodule:
 
 ```bash
 git clone --recurse-submodules --branch atomic \
@@ -37,30 +52,32 @@ git clone --recurse-submodules --branch atomic \
 cd variant-nnue-tools
 ```
 
-The root Makefile exposes the supported transition-layer targets:
+The root Makefile keeps the two toolchains visibly separate:
 
 ```bash
 make verify-engine-pin
-make schema-header-check
+make -j2 ARCH=x86-64 legacy-data-tools
+make -j2 ARCH=x86-64 v2-data-tools
 make -j2 ARCH=x86-64 data-generator
-make -j2 ARCH=x86-64 data-tools
 make -j2 ARCH=x86-64 playing-engine
-make -j2 ARCH=x86-64 test
 ```
 
-Artifacts are produced in their owning source trees:
+`make data-tools` remains a compatibility alias for
+`make legacy-data-tools`; it does not select or build V2. Produced artifacts
+are:
 
-- `engine/Atomic-Stockfish/src/atomic-stockfish-data-generator`
-- `engine/Atomic-Stockfish/src/atomic-stockfish`
-- `src/atomic-data-tools`
+- `src/atomic-data-tools` — Legacy Atomic V1;
+- `engine/Atomic-Stockfish/src/atomic-stockfish-data-tools` — Atomic BIN V2;
+- `engine/Atomic-Stockfish/src/atomic-stockfish-data-generator` — both writers;
+- `engine/Atomic-Stockfish/src/atomic-stockfish` — playing engine.
 
-Use `COMP=mingw` on Windows from an MSYS2 MinGW64 shell; the corresponding
-artifacts have an `.exe` suffix.
+Windows MinGW artifacts have an `.exe` suffix. Use `COMP=mingw` from an MSYS2
+MinGW64 shell.
 
-## Generate, validate and train
+## Generate and validate
 
-Generation uses `Use NNUE=pure`; this mode is reserved for datasets and is not
-a playing-strength configuration:
+Generation uses `Use NNUE=pure`. This mode is reserved for datasets and must
+not be used for Elo or OpenBench play:
 
 ```text
 uci
@@ -68,51 +85,66 @@ setoption name EvalFile value atomic_run3b_e202_l05.nnue
 setoption name Use NNUE value pure
 setoption name Threads value 1
 isready
-generate_training_data depth 8 count 100000 output_file_name atomic.bin data_format bin seed 20260711
+generate_training_data depth 8 count 100000 output_file_name atomic data_format atomic-bin-v2 seed 20260711
 quit
 ```
 
-Send that command to the `atomic-stockfish-data-generator` artifact. The
-temporary `atomic-data-tools` backend deliberately does not expose
-`generate_training_data`; it owns `validate_training_data`, `convert_bin`,
-`convert_plain`, `convert_epd`, `convert_bin_from_pgn_extract`, `convert`,
-`transform` and `gather_statistics` until they are ported to the shared core.
-It starts in Atomic, advertises only `UCI_Variant=atomic`, rejects attempts to
-select another variant, and does not load mutable external variant definitions.
-
-Validate every generated shard before training:
+Send the command to `atomic-stockfish-data-generator`. For Legacy V1, select
+`data_format bin`; its validator remains the UCI command:
 
 ```text
-uci
-setoption name UCI_Variant value atomic
 validate_training_data atomic.bin
-quit
 ```
 
-The current compatibility format is the headerless 72-byte Legacy Atomic V1
-wire. It rejects append/overwrite, truncated records, invalid moves and
-Atomic960. See [the frozen contract](docs/legacy_atomic_v1.md) and
-[generation options](docs/generate_training_data.md).
+For V2, pass only the completed manifest sidecar to the wrapper:
+
+```bash
+python script/atomic_bin_v2_tools.py capabilities
+python script/atomic_bin_v2_tools.py validate \
+  --format atomic-bin-v2 \
+  --manifest atomic.atbin.manifest.json
+```
+
+The two named arguments are mandatory and order-independent. A raw `.atbin`
+path, positional input, omitted `--format`, or any unsupported format is an
+error. The launcher does not synthesize a manifest path, scan sibling shards,
+or inspect file magic to infer V2. For the contractual exits `0`, `2` and `3`,
+it preserves the child exit class and canonical stdout/stderr response. An
+unexpected process failure becomes a fail-closed launcher error.
+
+V2 validation authenticates the canonical sidecar and streams every declared
+shard through the pinned C++ reader. Success covers exact size and SHA-256,
+header/schema/count agreement, canonical records, Atomic legal moves,
+Atomic960 metadata and aggregate statistics. See
+[Atomic BIN V2](docs/atomic_bin_v2.md) and
+[the frozen Legacy V1 contract](docs/legacy_atomic_v1.md).
 
 ## Tests and CI
 
-The dedicated `Atomic tools` workflow builds the pinned engine/generator and
-the temporary backend, runs positive and negative pin tests, codec/integration
-tests, and passes every deterministic Atomic generator fixture through the
-tools validator. It also runs the cross-component path under ASan+UBSan and
-strict Valgrind, verifies the pinned Threads=2 TSan generator gate, and executes
-the pinned C++ codec unit on GCC, Clang and MinGW. The upstream Fairy workflows
-no longer run for PRs targeting this independent `atomic` branch. The complete
-test migration inventory is in
+Focused targets are:
+
+```bash
+make -j2 ARCH=x86-64 test
+make -j2 ARCH=x86-64 v2-data-tools-tests
+make -j2 ARCH=x86-64 v2-tools-unit
+make -j2 ARCH=x86-64 ATOMIC_NNUE_TEST_NET=/path/to/atomic.nnue v2-tools-integration
+```
+
+`v2-tools-integration` generates a real V2 fixture with the pinned generator,
+then compares direct-child and wrapper behavior for capabilities, a valid
+manifest and raw-shard rejection. CI runs the legacy and V2 contracts on GCC,
+Clang and MinGW, plus ASan+UBSan and strict Valgrind lanes. The migration
+inventory and exact gates are in
 [Atomic wrapper validation](docs/atomic_wrapper_validation.md).
 
-This is H7.2-B of the Atomic-Stockfish migration. A later block will replace
-the temporary backend with the shared Atomic decoder and introduce
-`atomic-bin-v2`, including a versioned header, 32-bit move wire and Atomic960
-metadata.
+H7.3-C3 introduces only data-tool build, delegation and validation behavior.
+The submodule advances to an already merged and independently gated
+Atomic-Stockfish commit; this wrapper block adds no search, evaluation, time or
+move-generation change. No Elo/LOS test applies to C3. Play-affecting engine
+changes retain the project's normal OpenBench gates.
 
 ## License
 
 The retained Fairy-Stockfish-derived code is distributed under GPL-3.0. See
-[Copying.txt](Copying.txt). Atomic-Stockfish is pinned as source, not bundled
-as a generated binary.
+[Copying.txt](Copying.txt). Atomic-Stockfish is pinned as source, not bundled as
+a generated binary.

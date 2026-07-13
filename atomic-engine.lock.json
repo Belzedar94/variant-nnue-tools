@@ -1,10 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "submodule": {
     "name": "engine/Atomic-Stockfish",
     "path": "engine/Atomic-Stockfish",
     "url": "https://github.com/Belzedar94/Atomic-Stockfish.git",
-    "commit": "d1d04c34834232c34ce76ed226923e8191f711da",
+    "commit": "388bae077f3c6bd17182ac6883b3436e9eb85e42",
     "required_ref": "refs/remotes/origin/main"
   },
   "data_schema": {
@@ -18,6 +18,7 @@
   "build_contract": {
     "playing_target": "build",
     "data_generator_target": "data-generator",
+    "data_tools_target": "data-tools",
     "playing_artifacts": {
       "linux": "src/atomic-stockfish",
       "windows": "src/atomic-stockfish.exe"
@@ -25,6 +26,22 @@
     "data_generator_artifacts": {
       "linux": "src/atomic-stockfish-data-generator",
       "windows": "src/atomic-stockfish-data-generator.exe"
+    },
+    "data_tools_artifacts": {
+      "linux": "src/atomic-stockfish-data-tools",
+      "windows": "src/atomic-stockfish-data-tools.exe"
     }
+  },
+  "data_tools_contract": {
+    "contract_version": 1,
+    "data_schema": {
+      "path": "schemas/atomic-bin-v2.json",
+      "sha256": "0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6"
+    },
+    "manifest_schema": {
+      "path": "schemas/atomic-bin-v2-manifest.json",
+      "sha256": "83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42"
+    },
+    "capabilities": "{\"type\":\"atomic-data-tools-capabilities\",\"contract_version\":1,\"formats\":{\"atomic-bin-v2\":{\"data_schema_sha256\":\"0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6\",\"manifest_schema_sha256\":\"83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42\",\"entrypoint\":\"manifest\",\"read\":true,\"write\":false,\"operations\":[\"validate\"]}}}\n"
   }
 }
