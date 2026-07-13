@@ -23,14 +23,17 @@ SPEC.loader.exec_module(launcher)
 
 DATA_SHA = "0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6"
 MANIFEST_SHA = "83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42"
+DECODE_SHA = "5e3f8d7c6db6ee955b71747ee063859e15609adb557a3754228a606f3df2caad"
 CAPABILITIES = (
     '{"type":"atomic-data-tools-capabilities","contract_version":1,'
     '"formats":{"atomic-bin-v2":{"data_schema_sha256":"'
     + DATA_SHA
     + '","manifest_schema_sha256":"'
     + MANIFEST_SHA
+    + '","decode_schema_sha256":"'
+    + DECODE_SHA
     + '","entrypoint":"manifest","read":true,"write":false,'
-    '"operations":["validate"]}}}\n'
+    '"operations":["validate","decode"]}}}\n'
 )
 
 FAKE_CHILD = r'''#!/usr/bin/env python3
@@ -79,6 +82,10 @@ class AtomicBinV2LauncherTest(unittest.TestCase):
                         "manifest_schema": {
                             "path": "schemas/atomic-bin-v2-manifest.json",
                             "sha256": MANIFEST_SHA,
+                        },
+                        "decode_schema": {
+                            "path": "schemas/atomic-data-tools-decode-v1.json",
+                            "sha256": DECODE_SHA,
                         },
                         "capabilities": CAPABILITIES,
                     }
@@ -165,8 +172,133 @@ class AtomicBinV2LauncherTest(unittest.TestCase):
                 os.environ["ATOMIC_LAUNCHER_TEST_STDERR_HEX"] = expected_stderr.hex()
                 os.environ["ATOMIC_LAUNCHER_TEST_EXIT"] = str(child_exit)
                 code, stdout, stderr = self.invoke(arguments)
-                self.assertEqual((code, stdout, stderr), (child_exit, expected_stdout, expected_stderr))
+                self.assertEqual(
+                    (code, stdout, stderr),
+                    (child_exit, expected_stdout, expected_stderr),
+                )
                 self.assertEqual(self.invocations(), [["capabilities"], arguments])
+
+    def test_decode_preserves_unicode_order_and_exact_contract_results(self) -> None:
+        arguments = [
+            "decode",
+            "--limit",
+            "2",
+            "--manifest",
+            str(self.root / "données atomiques é.atbin.manifest.json"),
+            "--offset",
+            "0",
+            "--format",
+            "atomic-bin-v2",
+        ]
+        cases = (
+            (
+                0,
+                (
+                    '{"type":"atomic-data-tools-decode-header","status":"ok"}\n'
+                    '{"type":"atomic-data-tools-decode-record","fen":"é"}\n'
+                    '{"type":"atomic-data-tools-decode-record","fen":"ñ"}\n'
+                    '{"type":"atomic-data-tools-decode-footer","status":"ok"}\n'
+                ).encode("utf-8"),
+                b"",
+            ),
+            (
+                2,
+                b"",
+                '{"status":"error","code":"missing_value","detail":"é"}\n'.encode(),
+            ),
+            (
+                3,
+                b"",
+                '{"status":"error","code":"invalid_record","detail":"ñ"}\n'.encode(),
+            ),
+        )
+        for child_exit, expected_stdout, expected_stderr in cases:
+            with self.subTest(child_exit=child_exit):
+                self.log.unlink(missing_ok=True)
+                os.environ["ATOMIC_LAUNCHER_TEST_STDOUT_HEX"] = expected_stdout.hex()
+                os.environ["ATOMIC_LAUNCHER_TEST_STDERR_HEX"] = expected_stderr.hex()
+                os.environ["ATOMIC_LAUNCHER_TEST_EXIT"] = str(child_exit)
+                code, stdout, stderr = self.invoke(arguments)
+                self.assertEqual(
+                    (code, stdout, stderr),
+                    (child_exit, expected_stdout, expected_stderr),
+                )
+                self.assertEqual(self.invocations(), [["capabilities"], arguments])
+
+    def test_decode_unexpected_child_exit_fails_closed_without_output_leak(self) -> None:
+        arguments = [
+            "decode",
+            "--format",
+            "atomic-bin-v2",
+            "--manifest",
+            "dataset.atbin.manifest.json",
+            "--limit",
+            "1",
+        ]
+        os.environ["ATOMIC_LAUNCHER_TEST_STDOUT_HEX"] = b"must-not-leak\n".hex()
+        os.environ["ATOMIC_LAUNCHER_TEST_STDERR_HEX"] = b"child-crash-detail\n".hex()
+        os.environ["ATOMIC_LAUNCHER_TEST_EXIT"] = "4"
+        code, stdout, stderr = self.invoke(arguments)
+        self.assertEqual(code, 3)
+        self.assertEqual(stdout, b"")
+        self.assertEqual(
+            stderr,
+            b"Atomic BIN V2 launcher error: pinned child returned unsupported exit code 4\n",
+        )
+        self.assertEqual(self.invocations(), [["capabilities"], arguments])
+
+    def test_decode_schema_hash_and_operation_order_are_fail_closed(self) -> None:
+        original = json.loads(self.lock.read_text(encoding="utf-8"))
+        cases = (
+            (
+                "missing decode schema",
+                lambda lock: lock["data_tools_contract"].pop("decode_schema"),
+                b"missing or unknown fields",
+            ),
+            (
+                "decode schema hash drift",
+                lambda lock: lock["data_tools_contract"]["decode_schema"].update(
+                    {"sha256": "0" * 64}
+                ),
+                b"locked schemas and operations",
+            ),
+            (
+                "operation order drift",
+                lambda lock: lock["data_tools_contract"].update(
+                    {
+                        "capabilities": CAPABILITIES.replace(
+                            '["validate","decode"]', '["decode","validate"]'
+                        )
+                    }
+                ),
+                b"locked schemas and operations",
+            ),
+        )
+        for label, mutate, expected_error in cases:
+            with self.subTest(label=label):
+                self.log.unlink(missing_ok=True)
+                locked = json.loads(json.dumps(original))
+                mutate(locked)
+                self.lock.write_text(
+                    json.dumps(locked, separators=(",", ":")) + "\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                code, stdout, stderr = self.invoke(
+                    [
+                        "decode",
+                        "--format",
+                        "atomic-bin-v2",
+                        "--manifest",
+                        "dataset.atbin.manifest.json",
+                        "--limit",
+                        "1",
+                    ]
+                )
+                self.assertEqual(code, 3)
+                self.assertEqual(stdout, b"")
+                self.assertIn(expected_error, stderr)
+                self.assertEqual(self.invocations(), [])
 
     def test_raw_shard_positional_and_unknown_are_not_rewritten(self) -> None:
         cases = (

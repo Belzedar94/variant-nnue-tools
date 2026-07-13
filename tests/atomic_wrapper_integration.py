@@ -23,6 +23,9 @@ TOOLS_SCHEMA = (
 )
 RECORD_SIZE = 72
 RESOLVED_SEED = 4843478989694531390
+V2_DECODE_SCHEMA_SHA256 = (
+    "5e3f8d7c6db6ee955b71747ee063859e15609adb557a3754228a606f3df2caad"
+)
 EXPECTED_DATA_BY_NET = {
     "9CF054CA00B82AB53A34473DE52D1104AEDDAA19B2E7B24091B5E613AF485985": (
         "762555D8C054B8CED4FE1A18397711F2E6E10EB55397EA242DC9479BBC1F339A"
@@ -176,11 +179,38 @@ def assert_v2_delegation(
             "Atomic BIN V2 generator did not create both shard and canonical sidecar"
         )
 
+    unicode_root = root / "données-é"
+    unicode_root.mkdir()
+    unicode_shard = unicode_root / shard.name
+    unicode_manifest = unicode_root / manifest.name
+    shard.replace(unicode_shard)
+    manifest.replace(unicode_manifest)
+    shard = unicode_shard
+    manifest = unicode_manifest
+
     wrapper_command = (sys.executable, str(wrapper))
     cases = (
         ("capabilities",),
         (
             "validate",
+            "--manifest",
+            str(manifest),
+            "--format",
+            "atomic-bin-v2",
+        ),
+        (
+            "decode",
+            "--limit",
+            "2",
+            "--manifest",
+            str(manifest),
+            "--offset",
+            "0",
+            "--format",
+            "atomic-bin-v2",
+        ),
+        (
+            "decode",
             "--manifest",
             str(manifest),
             "--format",
@@ -209,11 +239,17 @@ def assert_v2_delegation(
             )
         results.append(delegated)
 
-    capabilities, valid, raw_shard = results
+    capabilities, valid, decoded, decode_cli_error, raw_shard = results
     if capabilities.returncode != 0 or not capabilities.stdout.endswith(b"\n"):
         raise AssertionError("V2 capabilities were not a successful LF-terminated response")
     capability_payload = json.loads(capabilities.stdout)
-    if set(capability_payload.get("formats", {})) != {"atomic-bin-v2"}:
+    capability_v2 = capability_payload.get("formats", {}).get("atomic-bin-v2", {})
+    if (
+        set(capability_payload.get("formats", {})) != {"atomic-bin-v2"}
+        or capability_v2.get("decode_schema_sha256")
+        != V2_DECODE_SCHEMA_SHA256
+        or capability_v2.get("operations") != ["validate", "decode"]
+    ):
         raise AssertionError(f"unexpected V2 capabilities: {capability_payload!r}")
 
     if valid.returncode != 0 or valid.stderr:
@@ -227,6 +263,35 @@ def assert_v2_delegation(
     ):
         raise AssertionError(f"unexpected V2 validation response: {validation_payload!r}")
 
+    if decoded.returncode != 0 or decoded.stderr or b"\r" in decoded.stdout:
+        raise AssertionError(f"delegated V2 decode failed: {decoded!r}")
+    decoded_lines = [json.loads(line) for line in decoded.stdout.splitlines()]
+    decoded_types = [line.get("type") for line in decoded_lines]
+    if decoded_types != [
+        "atomic-data-tools-decode-header",
+        "atomic-data-tools-decode-record",
+        "atomic-data-tools-decode-record",
+        "atomic-data-tools-decode-footer",
+    ]:
+        raise AssertionError(f"unexpected V2 decode JSONL: {decoded_lines!r}")
+    if (
+        decoded_lines[0].get("slice") != {"offset": "0", "limit": 2}
+        or decoded_lines[-1].get("slice", {}).get("records") != "2"
+    ):
+        raise AssertionError(f"unexpected V2 decode slice: {decoded_lines!r}")
+
+    if (
+        decode_cli_error.returncode != 2
+        or decode_cli_error.stdout
+        or not decode_cli_error.stderr
+    ):
+        raise AssertionError(
+            f"decode missing-limit response was not fail-closed: {decode_cli_error!r}"
+        )
+    decode_cli_payload = json.loads(decode_cli_error.stderr)
+    if decode_cli_payload.get("code") != "missing_limit":
+        raise AssertionError(f"unexpected decode CLI rejection: {decode_cli_payload!r}")
+
     if raw_shard.returncode != 3 or raw_shard.stdout or not raw_shard.stderr:
         raise AssertionError(
             "raw V2 shard was not rejected by the authoritative child with exit 3"
@@ -236,7 +301,7 @@ def assert_v2_delegation(
         raise AssertionError(f"unexpected raw-shard rejection: {raw_payload!r}")
 
     if generator_prefix:
-        for arguments in cases[:2]:
+        for arguments in cases[:3]:
             instrumented = run_process(
                 (*generator_prefix, str(tools), *arguments), timeout
             )
@@ -246,12 +311,50 @@ def assert_v2_delegation(
                     f"for {arguments!r}: {instrumented!r}"
                 )
             try:
-                json.loads(instrumented.stdout)
+                if arguments[0] == "decode":
+                    for line in instrumented.stdout.splitlines():
+                        json.loads(line)
+                else:
+                    json.loads(instrumented.stdout)
             except json.JSONDecodeError as error:
                 raise AssertionError(
                     "instrumented V2 child emitted invalid JSON "
                     f"for {arguments!r}: {instrumented.stdout!r}"
                 ) from error
+
+    corrupt = bytearray(shard.read_bytes())
+    corrupt[-1] ^= 1
+    shard.write_bytes(corrupt)
+    corrupt_arguments = (
+        "decode",
+        "--format",
+        "atomic-bin-v2",
+        "--manifest",
+        str(manifest),
+        "--offset",
+        "0",
+        "--limit",
+        "1",
+    )
+    direct_corrupt = run_process((str(tools), *corrupt_arguments), timeout)
+    delegated_corrupt = run_process((*wrapper_command, *corrupt_arguments), timeout)
+    if (
+        delegated_corrupt.returncode != direct_corrupt.returncode
+        or delegated_corrupt.stdout != direct_corrupt.stdout
+        or delegated_corrupt.stderr != direct_corrupt.stderr
+    ):
+        raise AssertionError(
+            "V2 wrapper did not relay post-slice corruption byte-exactly: "
+            f"direct={direct_corrupt!r} delegated={delegated_corrupt!r}"
+        )
+    if delegated_corrupt.returncode != 3 or delegated_corrupt.stdout:
+        raise AssertionError(
+            "V2 decode emitted stdout before full-dataset authentication: "
+            f"{delegated_corrupt!r}"
+        )
+    corrupt_payload = json.loads(delegated_corrupt.stderr)
+    if corrupt_payload.get("code") != "schema_mismatch":
+        raise AssertionError(f"unexpected corrupt V2 rejection: {corrupt_payload!r}")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

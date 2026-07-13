@@ -26,12 +26,17 @@ V2_MANIFEST_SCHEMA_PATH = "schemas/atomic-bin-v2-manifest.json"
 V2_MANIFEST_SCHEMA_SHA256 = (
     "83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42"
 )
+V2_DECODE_SCHEMA_PATH = "schemas/atomic-data-tools-decode-v1.json"
+V2_DECODE_SCHEMA_SHA256 = (
+    "5e3f8d7c6db6ee955b71747ee063859e15609adb557a3754228a606f3df2caad"
+)
 DATA_TOOLS_CAPABILITIES = (
     '{"type":"atomic-data-tools-capabilities","contract_version":1,'
     '"formats":{"atomic-bin-v2":{"data_schema_sha256":'
     f'"{V2_DATA_SCHEMA_SHA256}","manifest_schema_sha256":'
-    f'"{V2_MANIFEST_SCHEMA_SHA256}","entrypoint":"manifest","read":true,'
-    '"write":false,"operations":["validate"]}}}\n'
+    f'"{V2_MANIFEST_SCHEMA_SHA256}","decode_schema_sha256":'
+    f'"{V2_DECODE_SCHEMA_SHA256}","entrypoint":"manifest","read":true,'
+    '"write":false,"operations":["validate","decode"]}}}\n'
 )
 
 
@@ -220,7 +225,13 @@ def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
     require(isinstance(tools, dict), "data_tools_contract lock must be an object")
     require(
         set(tools)
-        == {"contract_version", "data_schema", "manifest_schema", "capabilities"},
+        == {
+            "contract_version",
+            "data_schema",
+            "manifest_schema",
+            "decode_schema",
+            "capabilities",
+        },
         "data_tools_contract lock has missing or unknown fields",
     )
     require(
@@ -231,6 +242,7 @@ def load_lock(path: Path, contents: str | None = None) -> dict[str, Any]:
     expected_schemas = {
         "data_schema": (V2_DATA_SCHEMA_PATH, V2_DATA_SCHEMA_SHA256),
         "manifest_schema": (V2_MANIFEST_SCHEMA_PATH, V2_MANIFEST_SCHEMA_SHA256),
+        "decode_schema": (V2_DECODE_SCHEMA_PATH, V2_DECODE_SCHEMA_SHA256),
     }
     for field, (expected_path, expected_sha256) in expected_schemas.items():
         locked_schema = tools[field]
@@ -455,7 +467,7 @@ def verify_engine_pin(root: Path = REPO_ROOT, lock_path: Path | None = None) -> 
 
     tools_lock = lock["data_tools_contract"]
     authenticated_schemas: dict[str, dict[str, Any]] = {}
-    for field in ("data_schema", "manifest_schema"):
+    for field in ("data_schema", "manifest_schema", "decode_schema"):
         schema_contract = tools_lock[field]
         authenticated_path = resolved_repository_path(
             submodule_path,
@@ -503,6 +515,61 @@ def verify_engine_pin(root: Path = REPO_ROOT, lock_path: Path | None = None) -> 
         "pinned V2 manifest data-schema binding mismatch",
     )
 
+    decode_schema = authenticated_schemas["decode_schema"]
+    require(
+        decode_schema.get("schema_version") == 1,
+        "pinned V2 decode schema version mismatch",
+    )
+    require(
+        decode_schema.get("$id")
+        == "urn:atomic-stockfish:schema:atomic-data-tools-decode:1",
+        "pinned V2 decode schema id mismatch",
+    )
+    require(
+        decode_schema.get("oneOf")
+        == [
+            {"$ref": "#/$defs/header"},
+            {"$ref": "#/$defs/record"},
+            {"$ref": "#/$defs/footer"},
+        ],
+        "pinned V2 decode schema stream variants mismatch",
+    )
+    decode_contract = decode_schema.get("x-jsonl-contract")
+    require(
+        isinstance(decode_contract, dict)
+        and decode_contract.get("encoding") == "UTF-8"
+        and decode_contract.get("bom") is False
+        and decode_contract.get("line_ending") == "LF"
+        and decode_contract.get("key_order") == "schema-declaration-order"
+        and decode_contract.get("sequence")
+        == [
+            "atomic-data-tools-decode-header",
+            "atomic-data-tools-decode-record repeated slice.limit times",
+            "atomic-data-tools-decode-footer",
+        ],
+        "pinned V2 decode JSONL contract mismatch",
+    )
+    decode_definitions = decode_schema.get("$defs")
+    decode_header = (
+        decode_definitions.get("header")
+        if isinstance(decode_definitions, dict)
+        else None
+    )
+    decode_properties = (
+        decode_header.get("properties") if isinstance(decode_header, dict) else None
+    )
+    decode_hash_property = (
+        decode_properties.get("decode_schema_sha256")
+        if isinstance(decode_properties, dict)
+        else None
+    )
+    require(
+        isinstance(decode_hash_property, dict)
+        and decode_hash_property.get("x-value")
+        == "sha256-of-exact-decode-schema-file",
+        "pinned V2 decode schema self-binding mismatch",
+    )
+
     engine_makefile = submodule_path / "src" / "Makefile"
     require(engine_makefile.is_file(), "pinned engine Makefile is missing")
     makefile = engine_makefile.read_text(encoding="utf-8")
@@ -538,7 +605,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"commit={lock['submodule']['commit']} "
         f"legacy_schema_sha256={lock['data_schema']['sha256']} "
         f"data_tools_contract={lock['data_tools_contract']['contract_version']} "
-        f"v2_schema_sha256={lock['data_tools_contract']['data_schema']['sha256']}"
+        f"v2_schema_sha256={lock['data_tools_contract']['data_schema']['sha256']} "
+        f"decode_schema_sha256={lock['data_tools_contract']['decode_schema']['sha256']}"
     )
     return 0
 

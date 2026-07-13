@@ -10,7 +10,9 @@ The normative files are in the locked engine submodule:
 - `schemas/atomic-bin-v2.json`, SHA-256
   `0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6`;
 - `schemas/atomic-bin-v2-manifest.json`, SHA-256
-  `83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42`.
+  `83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42`;
+- `schemas/atomic-data-tools-decode-v1.json`, SHA-256
+  `5e3f8d7c6db6ee955b71747ee063859e15609adb557a3754228a606f3df2caad`.
 
 This document is an operational guide. The exact pinned JSON schemas and C++
 layout assertions are authoritative.
@@ -98,6 +100,11 @@ python script/atomic_bin_v2_tools.py capabilities
 python script/atomic_bin_v2_tools.py validate \
   --format atomic-bin-v2 \
   --manifest /data/run.atbin.manifest.json
+python script/atomic_bin_v2_tools.py decode \
+  --format atomic-bin-v2 \
+  --manifest /data/run.atbin.manifest.json \
+  --offset 0 \
+  --limit 16
 ```
 
 `validate` requires both named arguments; their order is irrelevant. The
@@ -108,15 +115,22 @@ the complete response with `atomic-engine.lock.json`. Only this exact contract
 is accepted:
 
 ```json
-{"type":"atomic-data-tools-capabilities","contract_version":1,"formats":{"atomic-bin-v2":{"data_schema_sha256":"0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6","manifest_schema_sha256":"83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42","entrypoint":"manifest","read":true,"write":false,"operations":["validate"]}}}
+{"type":"atomic-data-tools-capabilities","contract_version":1,"formats":{"atomic-bin-v2":{"data_schema_sha256":"0352b036f2a140c609e3eb9c9d635dc553e8d77253d8faa92437390f5cf93cb6","manifest_schema_sha256":"83d63922df3ac4a0c81a21ec9d9fd9e180efe50f26efee62fe01710e09da5b42","decode_schema_sha256":"5e3f8d7c6db6ee955b71747ee063859e15609adb557a3754228a606f3df2caad","entrypoint":"manifest","read":true,"write":false,"operations":["validate","decode"]}}}
 ```
 
+`decode` requires `--limit 1..4096`; `--offset` is an unsigned decimal record
+index and defaults to zero. Its output is one schema-versioned header, exactly
+`limit` lossless record lines and one validation footer. The complete manifest
+dataset is authenticated, semantically decoded and byte-re-encoded before any
+stdout is committed, including records after the requested slice. It therefore
+cannot present a valid-looking prefix from a corrupt later shard.
+
 For the supported contract exits, the wrapper preserves the child's exit class
-and canonical stdout/stderr bytes. It does not reinterpret validation errors
+and exact stdout/stderr bytes. It does not reinterpret validation/decode errors
 or fall back to Legacy V1. The child contract uses exit `0` for success, `2`
 for a CLI/contract error and `3` for parser, authentication or semantic
-failure. Any other process exit becomes a fail-closed launcher error `3` rather
-than being presented as a valid child response.
+failure. Any other process exit becomes a fail-closed launcher error `3`
+without relaying the child output.
 The source pin plus contract version establish provenance and semantic
 compatibility; the wrapper does not claim a cryptographic signature over the
 platform-specific compiler output in the ignored build tree.
@@ -143,18 +157,20 @@ same manifest-only entrypoint and validate the same locked schema before
 loading records. The historical 72-byte Legacy V1 reader remains an explicit
 compatibility path and is not selected by failed V2 detection.
 
-## C3 gates
+## H7.5 wrapper gates
 
 The root workflow runs:
 
-- pinned lock/schema/capability mutation tests;
+- pinned lock/data/manifest/decode-schema/capability mutation tests;
 - V2 C++ production contract tests on GCC, Clang and MinGW;
-- Python launcher unit tests and direct-versus-wrapper E2E;
-- real V2 generation followed by manifest-only validation;
+- Python launcher unit tests and direct-versus-wrapper validation/decode E2E,
+  including Unicode paths, argument-order preservation, exact stream/exit
+  relay and late-corruption atomic-output checks;
+- real V2 generation followed by manifest-only validation and decode;
 - ASan+UBSan and strict Valgrind execution; and
 - the unchanged Legacy V1 pipeline in parallel.
 
-H7.3-C3 adds no playing-source, search, evaluation, time-management or
+H7.5 adds no playing-source, search, evaluation, time-management or
 move-generation behavior. The selected engine commit was already merged and
 gated in Atomic-Stockfish. This wrapper block is data-only and requires no
 Elo/LOS test.
