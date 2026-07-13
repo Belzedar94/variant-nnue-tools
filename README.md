@@ -10,7 +10,8 @@ Two explicit data contracts coexist during the migration:
 - `legacy-atomic-v1` uses the retained Fairy-derived `atomic-data-tools`
   executable for the historical headerless 72-byte format;
 - `atomic-bin-v2` uses `script/atomic_bin_v2_tools.py`, a fail-closed launcher
-  for the validator compiled from the pinned Atomic-Stockfish submodule.
+  for the validator and lossless decoder compiled from the pinned
+  Atomic-Stockfish submodule.
 
 The wrapper never guesses a format from a filename or file contents. V2 can be
 opened only through its canonical `.atbin.manifest.json` sidecar. Legacy V1
@@ -23,12 +24,13 @@ remains available under explicit legacy targets and commands.
 | Playing engine | `engine/Atomic-Stockfish` | UCI/XBoard Atomic engine |
 | Data generation | `engine/Atomic-Stockfish` | Legacy V1 and Atomic BIN V2 writers |
 | Legacy dataset tools | this repository | V1 validation, conversion and statistics |
-| V2 dataset validator | `engine/Atomic-Stockfish` | Manifest-authenticated, streaming V2 validation |
-| V2 command launcher | this repository | Authenticated delegation to the pinned validator |
+| V2 dataset tools | `engine/Atomic-Stockfish` | Manifest-authenticated validation and bounded lossless decode |
+| V2 command launcher | this repository | Authenticated byte-exact delegation to the pinned data tools |
 | Trainer | `variant-nnue-pytorch/atomic` | Version-specific dataset readers and NNUE serialization |
 
 `atomic-engine.lock.json` is authoritative for the engine commit, repository
-URL, schemas, artifacts and data-tools capability response. The locked commit
+URL, data/manifest/decode schemas, artifacts and data-tools capability
+response. The locked commit
 must be merged into `Atomic-Stockfish/main`; branch heads are not accepted as
 pins. `make verify-engine-pin` authenticates one coherent Git index snapshot
 and rejects a missing, dirty, conflicted or wrong-commit submodule, changed
@@ -74,7 +76,7 @@ are:
 Windows MinGW artifacts have an `.exe` suffix. Use `COMP=mingw` from an MSYS2
 MinGW64 shell.
 
-## Generate and validate
+## Generate, validate and decode
 
 Generation uses `Use NNUE=pure`. This mode is reserved for datasets and must
 not be used for Elo or OpenBench play:
@@ -103,18 +105,29 @@ python script/atomic_bin_v2_tools.py capabilities
 python script/atomic_bin_v2_tools.py validate \
   --format atomic-bin-v2 \
   --manifest atomic.atbin.manifest.json
+python script/atomic_bin_v2_tools.py decode \
+  --format atomic-bin-v2 \
+  --manifest atomic.atbin.manifest.json \
+  --offset 0 \
+  --limit 16
 ```
 
-The two named arguments are mandatory and order-independent. A raw `.atbin`
-path, positional input, omitted `--format`, or any unsupported format is an
-error. The launcher does not synthesize a manifest path, scan sibling shards,
-or inspect file magic to infer V2. For the contractual exits `0`, `2` and `3`,
-it preserves the child exit class and canonical stdout/stderr response. An
-unexpected process failure becomes a fail-closed launcher error.
+Both operations require named `--format` and `--manifest` arguments;
+`decode` additionally requires `--limit 1..4096` and accepts an optional
+unsigned `--offset` (default `0`). Options are order-independent at the child,
+while the launcher relays the original argument vector unchanged, including
+Unicode paths. A raw `.atbin` path, positional input, omitted `--format`, or any
+unsupported format is an error. The launcher does not synthesize a manifest
+path, scan sibling shards, or inspect file magic to infer V2. For the
+contractual exits `0`, `2` and `3`, it preserves the child exit class and exact
+stdout/stderr bytes. An unexpected process failure becomes a fail-closed
+launcher error without relaying unauthenticated child output.
 
-V2 validation authenticates the canonical sidecar and streams every declared
-shard through the pinned C++ reader. Success covers exact size and SHA-256,
-header/schema/count agreement, canonical records, Atomic legal moves,
+V2 validation and decode authenticate the canonical sidecar and every declared
+shard through the pinned C++ reader. Decode buffers only the requested slice
+but validates, semantically decodes and byte-re-encodes the complete dataset
+before emitting its versioned UTF-8/LF JSONL. Success covers exact size and
+SHA-256, header/schema/count agreement, canonical records, Atomic legal moves,
 Atomic960 metadata and aggregate statistics. See
 [Atomic BIN V2](docs/atomic_bin_v2.md) and
 [the frozen Legacy V1 contract](docs/legacy_atomic_v1.md).
@@ -131,16 +144,18 @@ make -j2 ARCH=x86-64 ATOMIC_NNUE_TEST_NET=/path/to/atomic.nnue v2-tools-integrat
 ```
 
 `v2-tools-integration` generates a real V2 fixture with the pinned generator,
-then compares direct-child and wrapper behavior for capabilities, a valid
-manifest and raw-shard rejection. CI runs the legacy and V2 contracts on GCC,
+then compares direct-child and wrapper behavior for capabilities, validation,
+lossless decode, CLI errors, late corruption and raw-shard rejection. CI runs
+the legacy and V2 contracts on GCC,
 Clang and MinGW, plus ASan+UBSan and strict Valgrind lanes. The migration
 inventory and exact gates are in
 [Atomic wrapper validation](docs/atomic_wrapper_validation.md).
 
-H7.3-C3 introduces only data-tool build, delegation and validation behavior.
+H7.5 introduces only data-tool pinning, delegation, validation and decode
+behavior.
 The submodule advances to an already merged and independently gated
 Atomic-Stockfish commit; this wrapper block adds no search, evaluation, time or
-move-generation change. No Elo/LOS test applies to C3. Play-affecting engine
+move-generation change. No Elo/LOS test applies to H7.5. Play-affecting engine
 changes retain the project's normal OpenBench gates.
 
 ## License

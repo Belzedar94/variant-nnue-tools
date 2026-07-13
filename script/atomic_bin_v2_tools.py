@@ -53,6 +53,7 @@ def _load_expected_capabilities(lock_path: Path) -> bytes:
             "contract_version",
             "data_schema",
             "manifest_schema",
+            "decode_schema",
             "capabilities",
         },
         "data_tools_contract has missing or unknown fields",
@@ -67,6 +68,7 @@ def _load_expected_capabilities(lock_path: Path) -> bytes:
     for field, expected_path in (
         ("data_schema", "schemas/atomic-bin-v2.json"),
         ("manifest_schema", "schemas/atomic-bin-v2-manifest.json"),
+        ("decode_schema", "schemas/atomic-data-tools-decode-v1.json"),
     ):
         schema = contract[field]
         _require(isinstance(schema, dict), f"{field} must be an object")
@@ -122,6 +124,7 @@ def _load_expected_capabilities(lock_path: Path) -> bytes:
         == {
             "data_schema_sha256",
             "manifest_schema_sha256",
+            "decode_schema_sha256",
             "entrypoint",
             "read",
             "write",
@@ -132,10 +135,11 @@ def _load_expected_capabilities(lock_path: Path) -> bytes:
     _require(
         v2["data_schema_sha256"] == schemas["data_schema"]["sha256"]
         and v2["manifest_schema_sha256"] == schemas["manifest_schema"]["sha256"]
+        and v2["decode_schema_sha256"] == schemas["decode_schema"]["sha256"]
         and v2["entrypoint"] == "manifest"
         and v2["read"] is True
         and v2["write"] is False
-        and v2["operations"] == ["validate"],
+        and v2["operations"] == ["validate", "decode"],
         "atomic-bin-v2 capability does not match the locked schemas and operations",
     )
     return capability_text.encode("utf-8")

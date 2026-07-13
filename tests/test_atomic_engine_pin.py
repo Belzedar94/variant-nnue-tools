@@ -60,6 +60,7 @@ class AtomicEnginePinTest(unittest.TestCase):
         for relative_path in (
             atomic_engine_pin.V2_DATA_SCHEMA_PATH,
             atomic_engine_pin.V2_MANIFEST_SCHEMA_PATH,
+            atomic_engine_pin.V2_DECODE_SCHEMA_PATH,
         ):
             source = (
                 atomic_engine_pin.REPO_ROOT
@@ -178,6 +179,10 @@ class AtomicEnginePinTest(unittest.TestCase):
                     "path": atomic_engine_pin.V2_MANIFEST_SCHEMA_PATH,
                     "sha256": atomic_engine_pin.V2_MANIFEST_SCHEMA_SHA256,
                 },
+                "decode_schema": {
+                    "path": atomic_engine_pin.V2_DECODE_SCHEMA_PATH,
+                    "sha256": atomic_engine_pin.V2_DECODE_SCHEMA_SHA256,
+                },
                 "capabilities": atomic_engine_pin.DATA_TOOLS_CAPABILITIES,
             },
         }
@@ -212,6 +217,13 @@ class AtomicEnginePinTest(unittest.TestCase):
         self.assertEqual(
             verified["data_tools_contract"]["capabilities"],
             atomic_engine_pin.DATA_TOOLS_CAPABILITIES,
+        )
+        self.assertEqual(
+            verified["data_tools_contract"]["decode_schema"],
+            {
+                "path": atomic_engine_pin.V2_DECODE_SCHEMA_PATH,
+                "sha256": atomic_engine_pin.V2_DECODE_SCHEMA_SHA256,
+            },
         )
         self.assertEqual(
             json.dumps(
@@ -301,6 +313,18 @@ class AtomicEnginePinTest(unittest.TestCase):
                 "manifest_schema SHA-256",
             ),
             (
+                "decode schema path",
+                ("data_tools_contract", "decode_schema", "path"),
+                "schemas/wrong-decode.json",
+                "decode_schema path",
+            ),
+            (
+                "decode schema hash",
+                ("data_tools_contract", "decode_schema", "sha256"),
+                "0" * 64,
+                "decode_schema SHA-256",
+            ),
+            (
                 "capabilities missing LF",
                 ("data_tools_contract", "capabilities"),
                 atomic_engine_pin.DATA_TOOLS_CAPABILITIES.rstrip("\n"),
@@ -320,7 +344,7 @@ class AtomicEnginePinTest(unittest.TestCase):
                 "capabilities semantic drift",
                 ("data_tools_contract", "capabilities"),
                 atomic_engine_pin.DATA_TOOLS_CAPABILITIES.replace(
-                    '"operations":["validate"]',
+                    '"operations":["validate","decode"]',
                     '"operations":[]',
                     1,
                 ),
@@ -392,6 +416,13 @@ class AtomicEnginePinTest(unittest.TestCase):
         self.commit_engine_schema_drift(atomic_engine_pin.V2_MANIFEST_SCHEMA_PATH)
         with self.assertRaisesRegex(
             atomic_engine_pin.PinError, "manifest_schema SHA-256 mismatch"
+        ):
+            atomic_engine_pin.verify_engine_pin(self.superproject, self.lock_path)
+
+    def test_authenticated_v2_decode_schema_mutation_is_rejected(self) -> None:
+        self.commit_engine_schema_drift(atomic_engine_pin.V2_DECODE_SCHEMA_PATH)
+        with self.assertRaisesRegex(
+            atomic_engine_pin.PinError, "decode_schema SHA-256 mismatch"
         ):
             atomic_engine_pin.verify_engine_pin(self.superproject, self.lock_path)
 
