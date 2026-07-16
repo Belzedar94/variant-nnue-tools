@@ -12,6 +12,12 @@ else
 PYTHON ?= python3
 endif
 
+# The helper uses its configured/fallback Git, authenticates the gitlink against
+# atomic-engine.lock.json, and emits only the verified commit. Forwarding that
+# value avoids compiler-specific build artifacts downgrading manifest
+# provenance to "unknown".
+PINNED_ENGINE_COMMIT := $(shell $(PYTHON) tests/atomic_engine_pin.py --print-commit 2>/dev/null)
+
 ifeq ($(COMP),mingw)
 LEGACY_TOOLS_EXE := atomic-data-tools.exe
 PLAYING_ENGINE_EXE := atomic-stockfish.exe
@@ -114,14 +120,22 @@ playing-engine: verify-engine-pin
 	@test -f "$(ENGINE_SRC)/$(PLAYING_ENGINE_EXE)"
 
 data-generator: verify-engine-pin
+	@test -n "$(PINNED_ENGINE_COMMIT)" || { \
+		echo "Authenticated Atomic engine commit is unavailable" >&2; exit 1; \
+	}
 	+$(MAKE) -C $(ENGINE_SRC) ARCH=$(ARCH) COMP=$(COMP) debug=$(debug) \
 		optimize=$(optimize) sanitize="$(sanitize)" \
+		GIT_SHA_FULL="$(PINNED_ENGINE_COMMIT)" \
 		EXTRACXXFLAGS="$(strip $(EXTRACXXFLAGS))" data-generator
 	@test -f "$(ENGINE_SRC)/$(DATA_GENERATOR_EXE)"
 
 data-generator-tests: verify-engine-pin
+	@test -n "$(PINNED_ENGINE_COMMIT)" || { \
+		echo "Authenticated Atomic engine commit is unavailable" >&2; exit 1; \
+	}
 	+$(MAKE) -C $(ENGINE_SRC) ARCH=$(ARCH) COMP=$(COMP) \
 		debug=$(debug) optimize=$(optimize) sanitize="$(sanitize)" \
+		GIT_SHA_FULL="$(PINNED_ENGINE_COMMIT)" \
 		EXTRACXXFLAGS="$(strip $(EXTRACXXFLAGS))" \
 		ATOMIC_NNUE_TEST_NET="$(ATOMIC_NNUE_TEST_NET)" data-generator-tests
 
