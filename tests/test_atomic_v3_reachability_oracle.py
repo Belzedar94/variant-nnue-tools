@@ -84,7 +84,7 @@ class OracleGoldenTests(unittest.TestCase):
         )
         self.assertEqual(
             ORACLE.UPSTREAM_CONTRACT_COMMIT,
-            "dde43fc08fb2bd45eec09d3be9f6d06845eeb24",
+            "dde43fc08fb2bd45eec09d3dbe9f6d06845eeb24",
         )
 
         lock = json.loads(ORACLE_LOCK.read_text(encoding="utf-8"))
@@ -412,17 +412,39 @@ class OracleCliTests(unittest.TestCase):
             original = ORACLE._write_temp
             calls = 0
 
-            def failing(parent: Path, basename: str, payload: bytes) -> Path:
+            def failing(
+                parent: Path,
+                basename: str,
+                payload: bytes,
+                parent_identity: tuple[int, int],
+                label: str,
+            ) -> Path:
                 nonlocal calls
                 calls += 1
                 if calls == 2:
                     raise OSError("second temp")
-                return original(parent, basename, payload)
+                return original(parent, basename, payload, parent_identity, label)
 
             with mock.patch.object(ORACLE, "_write_temp", side_effect=failing):
                 with self.assertRaisesRegex(OSError, "second temp"):
                     ORACLE._publish_pair(output, b"mask", manifest, b"manifest")
             self.assertEqual(list(root.iterdir()), [])
+
+    def test_temporary_creation_rejects_replaced_parent_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root / "publish"
+            parent.mkdir()
+            output = parent / "mask.atmask"
+            identity = ORACLE._assert_output_path(output, "output")
+            original = root / "original"
+            parent.rename(original)
+            parent.mkdir()
+
+            with self.assertRaisesRegex(ORACLE.OracleError, "parent identity changed"):
+                ORACLE._write_temp(parent, output.name, b"mask", identity, "output")
+            self.assertEqual(list(parent.iterdir()), [])
+            self.assertEqual(list(original.iterdir()), [])
 
     def test_single_file_fsync_failure_rolls_back(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

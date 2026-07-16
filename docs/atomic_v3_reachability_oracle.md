@@ -9,7 +9,7 @@ authenticated feature schema and two output paths; there is deliberately no
 engine, trainer, shard, counter, label, manifest or dataset input.
 
 The frozen specification is vendored byte-for-byte from Atomic-Stockfish merge
-`dde43fc08fb2bd45eec09d3be9f6d06845eeb24`:
+`dde43fc08fb2bd45eec09d3dbe9f6d06845eeb24`:
 
 - `spec/atomic-nnue-v3.json`, 51,407 bytes, SHA-256
   `9d3c77a58e5e55ac1bc798dab41977451eb523fce1d6fd3ec3f7c1e574a78750`;
@@ -110,7 +110,8 @@ python script/atomic_v3_reachability_oracle.py generate \
 Inputs are bounded regular-file snapshots opened once and checked with `fstat`
 before and after. UTF-8 BOMs, duplicate JSON keys, NaN/Infinity, symlinks,
 reparse points and identity changes are rejected. Outputs use same-directory
-temporary files, fsync and atomic no-replace hard links. Existing paths are
+temporary files, the original parent directory device/inode identity, fsync
+and atomic no-replace hard links. Existing paths are
 never overwritten; a partial two-file publication is rolled back without
 deleting a competing writer's file. The canonical manifest is the commit
 marker and becomes visible last.

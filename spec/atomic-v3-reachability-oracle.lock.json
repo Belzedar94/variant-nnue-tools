@@ -3,7 +3,7 @@
   "algorithm_version": "atomic-v3-symbolic-reachability-v1",
   "source": {
     "repository": "https://github.com/Belzedar94/Atomic-Stockfish",
-    "commit": "dde43fc08fb2bd45eec09d3be9f6d06845eeb24"
+    "commit": "dde43fc08fb2bd45eec09d3dbe9f6d06845eeb24"
   },
   "feature_schema": {
     "file": "atomic-nnue-v3.json",

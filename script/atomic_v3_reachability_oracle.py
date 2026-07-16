@@ -33,7 +33,7 @@ ALGORITHM_VERSION = "atomic-v3-symbolic-reachability-v1"
 MANIFEST_SCHEMA_ID = "atomic-v3-symbolic-reachability-manifest-v1"
 CONTROLLER_SCHEMA_ID = "atomic-v3-reachability-controller-v1"
 UPSTREAM_REPOSITORY = "https://github.com/Belzedar94/Atomic-Stockfish"
-UPSTREAM_CONTRACT_COMMIT = "dde43fc08fb2bd45eec09d3be9f6d06845eeb24"
+UPSTREAM_CONTRACT_COMMIT = "dde43fc08fb2bd45eec09d3dbe9f6d06845eeb24"
 FEATURE_SCHEMA_SHA256 = "9d3c77a58e5e55ac1bc798dab41977451eb523fce1d6fd3ec3f7c1e574a78750"
 REACHABILITY_SCHEMA_SHA256 = (
     "fb1af7130a2fa74be0fadd721db980269e12c89204b627eec63e6074ed3983e8"
@@ -794,7 +794,27 @@ def build_manifest(result: OracleResult, output_file: str) -> Mapping[str, Any]:
     }
 
 
-def _assert_output_path(path: Path, label: str) -> None:
+def _directory_identity(metadata: os.stat_result) -> Tuple[int, int]:
+    return int(metadata.st_dev), int(metadata.st_ino)
+
+
+def _assert_parent_identity(
+    parent: Path, expected: Tuple[int, int], label: str
+) -> None:
+    try:
+        metadata = os.lstat(parent)
+    except OSError as exc:
+        raise OracleError(label + ": output parent changed: " + str(exc)) from exc
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or _is_reparse_point(metadata)
+        or _directory_identity(metadata) != expected
+    ):
+        raise OracleError(label + ": output parent identity changed")
+
+
+def _assert_output_path(path: Path, label: str) -> Tuple[int, int]:
     _safe_basename(path.name, label)
     parent = path.parent if str(path.parent) else Path(".")
     _assert_no_link(parent, label + " parent")
@@ -806,9 +826,17 @@ def _assert_output_path(path: Path, label: str) -> None:
         raise OracleError(label + ": parent must be a directory")
     if os.path.lexists(path):
         raise OracleError(label + ": refusing to overwrite existing path")
+    return _directory_identity(metadata)
 
 
-def _write_temp(parent: Path, basename: str, payload: bytes) -> Path:
+def _write_temp(
+    parent: Path,
+    basename: str,
+    payload: bytes,
+    parent_identity: Tuple[int, int],
+    label: str,
+) -> Path:
+    _assert_parent_identity(parent, parent_identity, label)
     descriptor, name = tempfile.mkstemp(prefix="." + basename + ".", suffix=".tmp", dir=parent)
     path = Path(name)
     try:
@@ -818,8 +846,7 @@ def _write_temp(parent: Path, basename: str, payload: bytes) -> Path:
                 raise OracleError("short write while preparing transactional output")
             stream.flush()
             os.fsync(stream.fileno())
-        if path.parent.resolve(strict=True) != parent.resolve(strict=True):
-            raise OracleError("output parent changed while preparing transaction")
+        _assert_parent_identity(parent, parent_identity, label)
         return path
     except Exception:
         try:
@@ -865,8 +892,8 @@ def _publish_pair(
         os.path.abspath(second_path)
     ):
         raise OracleError("output and manifest paths must be distinct")
-    _assert_output_path(first_path, "output")
-    _assert_output_path(second_path, "manifest")
+    first_parent_identity = _assert_output_path(first_path, "output")
+    second_parent_identity = _assert_output_path(second_path, "manifest")
     first_parent = first_path.parent if str(first_path.parent) else Path(".")
     second_parent = second_path.parent if str(second_path.parent) else Path(".")
     first_temp: Path | None = None
@@ -874,12 +901,28 @@ def _publish_pair(
     first_published = False
     second_published = False
     try:
-        first_temp = _write_temp(first_parent, first_path.name, first_payload)
-        second_temp = _write_temp(second_parent, second_path.name, second_payload)
+        first_temp = _write_temp(
+            first_parent,
+            first_path.name,
+            first_payload,
+            first_parent_identity,
+            "output",
+        )
+        second_temp = _write_temp(
+            second_parent,
+            second_path.name,
+            second_payload,
+            second_parent_identity,
+            "manifest",
+        )
+        _assert_parent_identity(first_parent, first_parent_identity, "output")
         _link_no_replace(first_temp, first_path)
         first_published = True
+        _assert_parent_identity(first_parent, first_parent_identity, "output")
+        _assert_parent_identity(second_parent, second_parent_identity, "manifest")
         _link_no_replace(second_temp, second_path)
         second_published = True
+        _assert_parent_identity(second_parent, second_parent_identity, "manifest")
         if not _same_file(first_temp, first_path) or not _same_file(
             second_temp, second_path
         ):
@@ -918,13 +961,15 @@ def _publish_pair(
 
 
 def _publish_one(path: Path, payload: bytes, label: str) -> None:
-    _assert_output_path(path, label)
+    parent_identity = _assert_output_path(path, label)
     parent = path.parent if str(path.parent) else Path(".")
-    temporary = _write_temp(parent, path.name, payload)
+    temporary = _write_temp(parent, path.name, payload, parent_identity, label)
     published = False
     try:
+        _assert_parent_identity(parent, parent_identity, label)
         _link_no_replace(temporary, path)
         published = True
+        _assert_parent_identity(parent, parent_identity, label)
         if not _same_file(temporary, path):
             raise OracleError(label + ": published identity changed during transaction")
         _fsync_directory(parent)
