@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -41,8 +42,8 @@ class WrapperMakefileContractTest(unittest.TestCase):
     def test_verified_full_commit_is_forwarded_to_every_generator_entrypoint(self) -> None:
         makefile = (atomic_engine_pin.REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn(
-            'PINNED_ENGINE_COMMIT := $(shell git -C "$(ENGINE_DIR)" '
-            "rev-parse --verify HEAD 2>/dev/null)",
+            "PINNED_ENGINE_COMMIT := $(shell $(PYTHON) "
+            "tests/atomic_engine_pin.py --print-commit 2>/dev/null)",
             makefile,
         )
         self.assertRegex(makefile, r"(?m)^data-generator: verify-engine-pin$")
@@ -53,6 +54,36 @@ class WrapperMakefileContractTest(unittest.TestCase):
             "both the producer build and its direct fixture target must carry the "
             "authenticated full engine commit",
         )
+        self.assertEqual(
+            makefile.count('test -n "$(PINNED_ENGINE_COMMIT)"'),
+            2,
+            "generator entrypoints must fail closed when authentication emits no commit",
+        )
+
+    def test_print_commit_mode_is_explicit(self) -> None:
+        args = atomic_engine_pin.parse_args(["--print-commit"])
+        self.assertTrue(args.print_commit)
+
+    def test_print_commit_failure_cannot_be_captured_as_a_commit(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="missing-atomic-engine-pin-") as directory:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(atomic_engine_pin.__file__)),
+                    "--root",
+                    directory,
+                    "--print-commit",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("Atomic engine pin verification failed", completed.stderr)
 
 
 class AtomicEnginePinTest(unittest.TestCase):

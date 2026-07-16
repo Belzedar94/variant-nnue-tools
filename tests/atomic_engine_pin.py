@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
+import sys
 from typing import Any, Sequence
 
 
@@ -590,6 +591,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--lock", type=Path)
+    parser.add_argument(
+        "--print-commit",
+        action="store_true",
+        help="emit only the authenticated engine commit",
+    )
     return parser.parse_args(argv)
 
 
@@ -598,8 +604,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         lock = verify_engine_pin(args.root, args.lock)
     except PinError as error:
-        print(f"Atomic engine pin verification failed: {error}")
+        print(
+            f"Atomic engine pin verification failed: {error}",
+            file=sys.stderr if args.print_commit else sys.stdout,
+        )
         return 1
+    if args.print_commit:
+        print(lock["submodule"]["commit"])
+        return 0
     print(
         "Atomic engine pin verified "
         f"commit={lock['submodule']['commit']} "
