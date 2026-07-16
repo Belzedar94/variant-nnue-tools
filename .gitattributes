@@ -1,2 +1,6 @@
 tests/js/test.js text eol=lf
 tests/pgn/*.pgn text eol=lf
+spec/*.json text eol=lf
+script/atomic_v3_reachability_oracle.py text eol=lf
+tests/fixtures/atomic_v3_reachability_v1.json text eol=lf
+tests/test_atomic_v3_reachability_oracle.py text eol=lf

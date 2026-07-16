@@ -46,7 +46,7 @@ jobs:
           fi
           python3 tests/atomic_engine_pin.py
           python3 tests/test_atomic_engine_pin.py
-      - name: Build and test Legacy V1 and Atomic BIN V2 tools
+      - name: Build and test Legacy V1, Atomic BIN V2 and V3 reachability tools
         run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} test
       - name: Build pinned playing engine
         run: make -j2 ARCH=x86-64 COMP=${{ matrix.comp }} playing-engine
@@ -104,7 +104,7 @@ jobs:
           fi
           python tests/atomic_engine_pin.py
           python tests/test_atomic_engine_pin.py
-      - name: Build and test Legacy V1 and Atomic BIN V2 tools
+      - name: Build and test Legacy V1, Atomic BIN V2 and V3 reachability tools
         run: make -j2 ARCH=x86-64 COMP=mingw test
       - name: Build pinned playing engine
         run: make -j2 ARCH=x86-64 COMP=mingw playing-engine
