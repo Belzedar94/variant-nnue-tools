@@ -4,7 +4,7 @@
     "name": "engine/Atomic-Stockfish",
     "path": "engine/Atomic-Stockfish",
     "url": "https://github.com/Belzedar94/Atomic-Stockfish.git",
-    "commit": "dde43fc08fb2bd45eec09d3dbe9f6d06845eeb24",
+    "commit": "420c9f35266fbdc2167dc5b9d8d20d90281c60c9",
     "required_ref": "refs/remotes/origin/main"
   },
   "data_schema": {
