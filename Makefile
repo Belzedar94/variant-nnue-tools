@@ -1,5 +1,10 @@
 ENGINE_DIR ?= engine/Atomic-Stockfish
 ENGINE_SRC := $(ENGINE_DIR)/src
+# verify-engine-pin authenticates this gitlink against atomic-engine.lock.json
+# before any generator recipe runs. Forward the verified value explicitly so a
+# compiler-specific build artifact cannot make the engine's clean-tree probe
+# silently downgrade manifest provenance to "unknown".
+PINNED_ENGINE_COMMIT := $(shell git -C "$(ENGINE_DIR)" rev-parse --verify HEAD 2>/dev/null)
 ARCH ?= x86-64
 COMP ?= gcc
 debug ?= no
@@ -116,12 +121,14 @@ playing-engine: verify-engine-pin
 data-generator: verify-engine-pin
 	+$(MAKE) -C $(ENGINE_SRC) ARCH=$(ARCH) COMP=$(COMP) debug=$(debug) \
 		optimize=$(optimize) sanitize="$(sanitize)" \
+		GIT_SHA_FULL="$(PINNED_ENGINE_COMMIT)" \
 		EXTRACXXFLAGS="$(strip $(EXTRACXXFLAGS))" data-generator
 	@test -f "$(ENGINE_SRC)/$(DATA_GENERATOR_EXE)"
 
 data-generator-tests: verify-engine-pin
 	+$(MAKE) -C $(ENGINE_SRC) ARCH=$(ARCH) COMP=$(COMP) \
 		debug=$(debug) optimize=$(optimize) sanitize="$(sanitize)" \
+		GIT_SHA_FULL="$(PINNED_ENGINE_COMMIT)" \
 		EXTRACXXFLAGS="$(strip $(EXTRACXXFLAGS))" \
 		ATOMIC_NNUE_TEST_NET="$(ATOMIC_NNUE_TEST_NET)" data-generator-tests
 

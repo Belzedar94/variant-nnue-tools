@@ -37,6 +37,24 @@ def write(path: Path, contents: str) -> None:
     path.write_text(contents, encoding="utf-8", newline="\n")
 
 
+class WrapperMakefileContractTest(unittest.TestCase):
+    def test_verified_full_commit_is_forwarded_to_every_generator_entrypoint(self) -> None:
+        makefile = (atomic_engine_pin.REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn(
+            'PINNED_ENGINE_COMMIT := $(shell git -C "$(ENGINE_DIR)" '
+            "rev-parse --verify HEAD 2>/dev/null)",
+            makefile,
+        )
+        self.assertRegex(makefile, r"(?m)^data-generator: verify-engine-pin$")
+        self.assertRegex(makefile, r"(?m)^data-generator-tests: verify-engine-pin$")
+        self.assertEqual(
+            makefile.count('GIT_SHA_FULL="$(PINNED_ENGINE_COMMIT)"'),
+            2,
+            "both the producer build and its direct fixture target must carry the "
+            "authenticated full engine commit",
+        )
+
+
 class AtomicEnginePinTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="atomic-engine-pin-")
