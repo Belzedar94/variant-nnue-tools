@@ -1,0 +1,59 @@
+{
+  "algorithm_version": "atomic-v3-symbolic-reachability-v1",
+  "feature_schema_sha256": "9d3c77a58e5e55ac1bc798dab41977451eb523fce1d6fd3ec3f7c1e574a78750",
+  "oracle_output_bytes": 18772,
+  "oracle_output_sha256": "1e6454345e54784936db8220b93bc87c4d2903bc8ce2b630f8cfdcbf8d484551",
+  "reachability_mask_sha256": "6ff244b3c2c4e590c367205750099d34cc2cb7be47647b2dc593474c03067a0b",
+  "physical": {
+    "half-ka-v2-atomic-hm": {
+      "bytes": 2816,
+      "reachable_indices": 21200,
+      "raw_sha256": "9f2b5c895ad4efafcde1bf1b779d4c872f68b4ec02cf2d32743481be1bb041ee"
+    },
+    "atomic-capture-pair": {
+      "bytes": 5002,
+      "reachable_indices": 36870,
+      "raw_sha256": "557fe2cb2e84e594a54a44c8c6ecc9fe548e85e393d608070fd73c3be713c3c9"
+    },
+    "atomic-king-blast-ep": {
+      "bytes": 288,
+      "reachable_indices": 1372,
+      "raw_sha256": "ce29be20a201ae4c4d3acb68ba97603d911347407487becdde0f02708d77dff3"
+    },
+    "atomic-blast-ring": {
+      "bytes": 1280,
+      "reachable_indices": 8112,
+      "raw_sha256": "d390e1c4320797e9c0ac4352681f172bd8778df4839772ff03282c671fbf3f96"
+    }
+  },
+  "derived_hm": {
+    "hm_training": {
+      "bytes": 3072,
+      "reachable_indices": 21200,
+      "raw_sha256": "d9887a2719e8312a56b5c6ff67d36ab649b9cae4bc7638826e277f272477c220"
+    },
+    "hm_virtual_factors": {
+      "bytes": 96,
+      "reachable_indices": 704,
+      "raw_sha256": "15dd8ff9cb229c536ebecea05de558d54e6c7dd27f33fde2103dbf3d8bf34604"
+    }
+  },
+  "per_mask_sha256": {
+    "WHITE": {
+      "half_ka_v2_atomic_hm": "31e59d6c2fc5ff099951bf117e3a8a9bb1a95b8b3be1936c7104f3fbb7dbe0dc",
+      "atomic_capture_pair": "9b249d50de274728d788f1b2eb51eacf44adb89007303ac25617a0efbd8df41d",
+      "atomic_king_blast_ep": "fbd0bd066a229809c3b213fbf0d2fa929c645b3be904a8e2fe97d6125cad9dc5",
+      "atomic_blast_ring": "ab1f0a4f0de8bc3288ac50b42430f3bb5631901f8d70cc81ac9f6fef4d8b26a5",
+      "hm_training": "5b155e2120e2696000c8514a6e4cca0e2e365ca540da23a0149d63dba006ba59",
+      "hm_virtual_factors": "94737616bd3027b74e3b98680d67c28b2ff524ce5b0653f5c19f35bb2df9446b"
+    },
+    "BLACK": {
+      "half_ka_v2_atomic_hm": "fca9d70743737daf58e6f26719b0e51712c614fb1d747207f599aa89a2aa214b",
+      "atomic_capture_pair": "061d9eeb69c5eb0c90a4542b94551e67aa3521d7b57d5fd555f3c8702c1e95e2",
+      "atomic_king_blast_ep": "4c653829edf0b8487b7850d1f46a092880329079ae3c3d7c65348032e09f98b0",
+      "atomic_blast_ring": "6e61eb7ba412c70e7d0ef0b43966d541a4dc3a350f420d2989a1828211a4abe7",
+      "hm_training": "30ca3253f16273022e8fbc4b8721a0170b28ee033beff7f249131ded91fe9cf8",
+      "hm_virtual_factors": "9a72f5e09ffc219d306c038c9aaccbfbdb5970c49693e2e13fa85d68fa2a0645"
+    }
+  }
+}

@@ -34,7 +34,8 @@ endif
 	legacy-data-tools data-tools v2-data-tools v2-data-tools-tests \
 	legacy-tools-unit tools-unit legacy-tools-integration tools-integration \
 	v2-tools-unit legacy-wrapper-integration wrapper-integration v2-tools-integration \
-	playing-engine data-generator data-generator-tests engine-legacy-unit test clean
+	v3-reachability-oracle-tests playing-engine data-generator data-generator-tests \
+	engine-legacy-unit test clean
 
 help:
 	@echo "Atomic NNUE tools targets:"
@@ -46,6 +47,7 @@ help:
 	@echo "  v2-data-tools      build the pinned manifest-only Atomic BIN V2 tools"
 	@echo "  v2-data-tools-tests  run the pinned validate/decode contract suite"
 	@echo "  v2-tools-unit      test the fail-closed Python delegation launcher"
+	@echo "  v3-reachability-oracle-tests  run the independent stdlib-only V3 mask gates"
 	@echo "  v2-tools-integration  generate, validate and decode V2 direct and wrapped"
 	@echo "  playing-engine     build the pinned Atomic-Stockfish playing binary"
 	@echo "  data-generator     build the pinned Atomic-Stockfish data generator"
@@ -102,6 +104,9 @@ legacy-tools-integration: legacy-data-tools
 v2-tools-unit: verify-engine-pin
 	$(PYTHON) tests/test_atomic_bin_v2_tools.py
 
+v3-reachability-oracle-tests:
+	$(PYTHON) tests/test_atomic_v3_reachability_oracle.py
+
 playing-engine: verify-engine-pin
 	+$(MAKE) -C $(ENGINE_SRC) ARCH=$(ARCH) COMP=$(COMP) debug=$(debug) \
 		optimize=$(optimize) sanitize="$(sanitize)" \
@@ -146,7 +151,7 @@ v2-tools-integration: verify-engine-pin
 		--net "$(ATOMIC_NNUE_TEST_NET)"
 
 test: verify-engine-pin pin-tests verify-delegated-tsan tools-unit tools-integration \
-	v2-data-tools-tests v2-tools-unit
+	v2-data-tools-tests v2-tools-unit v3-reachability-oracle-tests
 
 clean:
 	$(MAKE) -C src EXE=$(LEGACY_TOOLS_EXE) clean

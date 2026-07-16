@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "algorithm_version": "atomic-v3-symbolic-reachability-v1",
+  "source": {
+    "repository": "https://github.com/Belzedar94/Atomic-Stockfish",
+    "commit": "dde43fc08fb2bd45eec09d3dbe9f6d06845eeb24"
+  },
+  "feature_schema": {
+    "file": "atomic-nnue-v3.json",
+    "bytes": 51407,
+    "sha256": "9d3c77a58e5e55ac1bc798dab41977451eb523fce1d6fd3ec3f7c1e574a78750"
+  },
+  "reachability_attestation_schema": {
+    "file": "atomic-v3-reachability-attestation-v1.json",
+    "bytes": 11572,
+    "sha256": "fb1af7130a2fa74be0fadd721db980269e12c89204b627eec63e6074ed3983e8"
+  },
+  "oracle_output": {
+    "physical_mask_count": 8,
+    "bytes": 18772,
+    "sha256": "1e6454345e54784936db8220b93bc87c4d2903bc8ce2b630f8cfdcbf8d484551",
+    "reachability_mask_sha256": "6ff244b3c2c4e590c367205750099d34cc2cb7be47647b2dc593474c03067a0b"
+  }
+}

@@ -13,6 +13,12 @@ Two explicit data contracts coexist during the migration:
   for the validator and lossless decoder compiled from the pinned
   Atomic-Stockfish submodule.
 
+AtomicNNUEV3 publication adds one independent evidence tool without changing
+either data format: `script/atomic_v3_reachability_oracle.py` authenticates the
+frozen V3 feature schema and symbolically reproduces the eight physical
+reachability masks. It imports no engine, trainer or dataset code and accepts
+no dataset input. See [the V3 reachability contract](docs/atomic_v3_reachability_oracle.md).
+
 The wrapper never guesses a format from a filename or file contents. V2 can be
 opened only through its canonical `.atbin.manifest.json` sidecar. Legacy V1
 remains available under explicit legacy targets and commands.
@@ -26,6 +32,7 @@ remains available under explicit legacy targets and commands.
 | Legacy dataset tools | this repository | V1 validation, conversion and statistics |
 | V2 dataset tools | `engine/Atomic-Stockfish` | Manifest-authenticated validation and bounded lossless decode |
 | V2 command launcher | this repository | Authenticated byte-exact delegation to the pinned data tools |
+| V3 reachability oracle | this repository | Dataset-independent physical masks and H9.3l-a evidence composition |
 | Trainer | `variant-nnue-pytorch/atomic` | Version-specific dataset readers and NNUE serialization |
 
 `atomic-engine.lock.json` is authoritative for the engine commit, repository
@@ -132,6 +139,26 @@ Atomic960 metadata and aggregate statistics. See
 [Atomic BIN V2](docs/atomic_bin_v2.md) and
 [the frozen Legacy V1 contract](docs/legacy_atomic_v1.md).
 
+## AtomicNNUEV3 reachability evidence
+
+Generate the immutable 18,772-byte WHITE-then-BLACK physical-mask wire and its
+canonical manifest:
+
+```bash
+python script/atomic_v3_reachability_oracle.py generate \
+  --feature-schema spec/atomic-nnue-v3.json \
+  --output atomic-v3-reachability.atmask \
+  --manifest atomic-v3-reachability.manifest.json
+```
+
+The command never overwrites, rejects symbolic links, detects input-identity
+changes and destination races, and makes the manifest visible only after the
+binary is ready. The separate `attest`
+command requires controller-authenticated campaign, producer, coverage-policy
+and oracle-binary descriptors plus their exact externally supplied controller
+SHA-256 trust anchor. Their absence or mismatch is fatal; the oracle does not
+turn self-declared producer metadata into authenticated evidence.
+
 ## Tests and CI
 
 Focused targets are:
@@ -140,6 +167,7 @@ Focused targets are:
 make -j2 ARCH=x86-64 test
 make -j2 ARCH=x86-64 v2-data-tools-tests
 make -j2 ARCH=x86-64 v2-tools-unit
+make v3-reachability-oracle-tests
 make -j2 ARCH=x86-64 ATOMIC_NNUE_TEST_NET=/path/to/atomic.nnue v2-tools-integration
 ```
 
